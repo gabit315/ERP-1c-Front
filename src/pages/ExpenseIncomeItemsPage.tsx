@@ -1,37 +1,49 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Plus, Search } from 'lucide-react'
 import PageHeaderWithAction from '../components/ui/PageHeaderWithAction'
 import RowActions from '../components/ui/RowActions'
+import { getFinancialItems, type FinancialItem } from '../api/financialItems'
 
 type Tab = 'expenses' | 'income'
-
-interface Item {
-  id: string
-  name: string
-  category: string
-}
-
-const expensesData: Item[] = [
-  { id: '1', name: 'Коммунальные услуги',      category: 'Эксплуатация'           },
-  { id: '2', name: 'Зарплата преподавателей',  category: 'Персонал'               },
-  { id: '3', name: 'Канцелярские товары',       category: 'Хозяйственные расходы'  },
-  { id: '4', name: 'Ремонт и обслуживание',    category: 'Эксплуатация'           },
-  { id: '5', name: 'Аренда помещений',          category: 'Эксплуатация'           },
-]
-
-const incomeData: Item[] = [
-  { id: '1', name: 'Оплата за обучение',   category: 'Образовательные услуги'    },
-  { id: '2', name: 'Субсидии из бюджета',  category: 'Государственное финансирование' },
-  { id: '3', name: 'Спонсорские взносы',   category: 'Прочие доходы'             },
-  { id: '4', name: 'Доходы от аренды',     category: 'Прочие доходы'             },
-]
 
 const tabs: { id: Tab; label: string }[] = [
   { id: 'expenses', label: 'Расходы' },
   { id: 'income',   label: 'Доходы'  },
 ]
 
-function ItemsTable({ rows }: { rows: Item[] }) {
+function ItemsTable({
+  rows,
+  loading,
+  error,
+  onRetry,
+}: {
+  rows: FinancialItem[]
+  loading: boolean
+  error: string | null
+  onRetry: () => void
+}) {
+  if (loading) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg flex items-center justify-center py-16">
+        <span className="text-sm text-gray-400">Загрузка...</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg flex flex-col items-center justify-center py-16 gap-3">
+        <span className="text-sm text-red-500">{error}</span>
+        <button
+          onClick={onRetry}
+          className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+        >
+          Повторить
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
       <table className="w-full text-sm border-collapse">
@@ -76,26 +88,44 @@ function ItemsTable({ rows }: { rows: Item[] }) {
 }
 
 export default function ExpenseIncomeItemsPage() {
+  const [items, setItems] = useState<FinancialItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>('expenses')
   const [query, setQuery] = useState('')
 
-  const sourceData = activeTab === 'expenses' ? expensesData : incomeData
+  const load = () => {
+    setLoading(true)
+    setError(null)
+    getFinancialItems()
+      .then(setItems)
+      .catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : 'Ошибка загрузки')
+      })
+      .finally(() => setLoading(false))
+  }
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return sourceData
-    return sourceData.filter(
-      (item) =>
-        item.name.toLowerCase().includes(q) ||
-        item.category.toLowerCase().includes(q)
-    )
-  }, [query, sourceData])
+  useEffect(() => {
+    load()
+  }, [])
 
-  // reset search when switching tabs
   const handleTabChange = (tab: Tab) => {
     setActiveTab(tab)
     setQuery('')
   }
+
+  const filtered = useMemo(() => {
+    const tabItems = items.filter(
+      (item) => item.itemType === (activeTab === 'expenses' ? 'expense' : 'income')
+    )
+    const q = query.trim().toLowerCase()
+    if (!q) return tabItems
+    return tabItems.filter(
+      (item) =>
+        item.name.toLowerCase().includes(q) ||
+        item.category.toLowerCase().includes(q)
+    )
+  }, [query, activeTab, items])
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -105,7 +135,10 @@ export default function ExpenseIncomeItemsPage() {
           title="Статьи расходов и доходов"
           subtitle="Классификация финансовых операций"
           action={
-            <button className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+            <button
+              disabled
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            >
               <Plus size={16} />
               Добавить статью
             </button>
@@ -160,7 +193,12 @@ export default function ExpenseIncomeItemsPage() {
           </div>
         </div>
 
-        <ItemsTable rows={filtered} />
+        <ItemsTable
+          rows={filtered}
+          loading={loading}
+          error={error}
+          onRetry={load}
+        />
 
       </div>
     </div>

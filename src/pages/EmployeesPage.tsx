@@ -1,42 +1,43 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Plus } from 'lucide-react'
 import PageHeaderWithAction from '../components/ui/PageHeaderWithAction'
 import SearchCard from '../components/ui/SearchCard'
 import RowActions from '../components/ui/RowActions'
+import { getEmployees, type Employee } from '../api/employees'
 
-interface Employee {
-  id: string
-  fullName: string
-  position: string
-  department: string
-  iin: string
-}
+function EmployeesTable({
+  rows,
+  loading,
+  error,
+  onRetry,
+}: {
+  rows: Employee[]
+  loading: boolean
+  error: string | null
+  onRetry: () => void
+}) {
+  if (loading) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg flex items-center justify-center py-16">
+        <span className="text-sm text-gray-400">Загрузка...</span>
+      </div>
+    )
+  }
 
-const data: Employee[] = [
-  {
-    id: '1',
-    fullName: 'Иванова Анна Петровна',
-    position: 'Преподаватель математики',
-    department: 'Кафедра математики',
-    iin: '850101350123',
-  },
-  {
-    id: '2',
-    fullName: 'Смирнов Петр Сергеевич',
-    position: 'Декан факультета',
-    department: 'Администрация',
-    iin: '780505450234',
-  },
-  {
-    id: '3',
-    fullName: 'Кожахметова Айгуль Нурлановна',
-    position: 'Лаборант',
-    department: 'Химический факультет',
-    iin: '920315550345',
-  },
-]
+  if (error) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg flex flex-col items-center justify-center py-16 gap-3">
+        <span className="text-sm text-red-500">{error}</span>
+        <button
+          onClick={onRetry}
+          className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+        >
+          Повторить
+        </button>
+      </div>
+    )
+  }
 
-function EmployeesTable({ rows }: { rows: Employee[] }) {
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
       <table className="w-full text-sm border-collapse">
@@ -89,19 +90,37 @@ function EmployeesTable({ rows }: { rows: Employee[] }) {
 }
 
 export default function EmployeesPage() {
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+
+  const load = () => {
+    setLoading(true)
+    setError(null)
+    getEmployees()
+      .then(setEmployees)
+      .catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : 'Ошибка загрузки')
+      })
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    load()
+  }, [])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return data
-    return data.filter(
+    if (!q) return employees
+    return employees.filter(
       (e) =>
         e.fullName.toLowerCase().includes(q) ||
         e.position.toLowerCase().includes(q) ||
         e.department.toLowerCase().includes(q) ||
         e.iin.includes(q)
     )
-  }, [query])
+  }, [query, employees])
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -111,7 +130,10 @@ export default function EmployeesPage() {
           title="Сотрудники"
           subtitle="Управление штатом сотрудников"
           action={
-            <button className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+            <button
+              disabled
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            >
               <Plus size={16} />
               Добавить сотрудника
             </button>
@@ -124,7 +146,12 @@ export default function EmployeesPage() {
           placeholder="Поиск сотрудников..."
         />
 
-        <EmployeesTable rows={filtered} />
+        <EmployeesTable
+          rows={filtered}
+          loading={loading}
+          error={error}
+          onRetry={load}
+        />
 
       </div>
     </div>

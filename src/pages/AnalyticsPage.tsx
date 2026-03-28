@@ -1,100 +1,90 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import SectionCard from '../components/ui/SectionCard'
 import PageHeaderWithAction from '../components/ui/PageHeaderWithAction'
+import {
+  getAnalytics,
+  PERIOD_LABELS,
+  type PeriodLabel,
+  type AnalyticsData,
+  type LinePoint,
+  type ExpenseSlice,
+  type QuarterPoint,
+  type AnalyticsInsights,
+} from '../api/analytics'
 
-// ─── static data ──────────────────────────────────────────────────────────────
+// ─── color palette for expense donut ─────────────────────────────────────────
 
-const PERIODS = ['Последние 6 месяцев', 'Текущий год', 'Прошлый год', 'Все время']
-
-const LINE_DATA = [
-  { label: 'Сен', income: 6.5, expense: 5.0 },
-  { label: 'Окт', income: 7.0, expense: 5.5 },
-  { label: 'Ноя', income: 7.2, expense: 5.8 },
-  { label: 'Дек', income: 7.8, expense: 6.0 },
-  { label: 'Янв', income: 8.0, expense: 5.8 },
-  { label: 'Фев', income: 7.8, expense: 6.1 },
-  { label: 'Мар', income: 8.2, expense: 6.1 },
-]
-
-const PIE_SLICES = [
-  { label: 'Зарплата',    pct: 67, color: '#3b82f6' },
-  { label: 'Аренда',      pct: 14, color: '#8b5cf6' },
-  { label: 'Коммунальные', pct: 5, color: '#22c55e' },
-  { label: 'Канцелярия',  pct: 5,  color: '#f97316' },
-  { label: 'Прочее',      pct: 9,  color: '#6b7280' },
-]
-
-const BAR_DATA = [
-  { label: 'Q1 2025', value: 19.5 },
-  { label: 'Q2 2025', value: 21.0 },
-  { label: 'Q3 2025', value: 22.5 },
-  { label: 'Q4 2025', value: 22.8 },
-  { label: 'Q1 2026', value: 23.2 },
-]
+const SLICE_COLORS = ['#3b82f6', '#8b5cf6', '#22c55e', '#f97316', '#6b7280', '#ec4899', '#14b8a6']
 
 // ─── SVG chart helpers ────────────────────────────────────────────────────────
 
-/** Convert polar to Cartesian, angles in radians */
 function polar(cx: number, cy: number, r: number, angle: number) {
   return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) }
 }
 
+/** Pick a nice axis ceiling: next clean multiple above max */
+function niceCeil(maxVal: number, steps = 5): { max: number; ticks: number[] } {
+  if (maxVal <= 0) return { max: 10, ticks: [0, 2, 4, 6, 8, 10] }
+  const raw   = maxVal * 1.1
+  const mag   = Math.pow(10, Math.floor(Math.log10(raw)))
+  const step  = Math.ceil(raw / mag / steps) * (mag / steps) * steps / steps
+  const nice  = step === 0 ? 1 : step
+  const ceil  = Math.ceil(raw / nice) * nice
+  const ticks: number[] = []
+  for (let i = 0; i <= ceil + nice * 0.01; i += nice) ticks.push(parseFloat(i.toFixed(4)))
+  return { max: ceil, ticks }
+}
+
 // ─── Line chart ───────────────────────────────────────────────────────────────
 
-function RevenueLineChart() {
+function RevenueLineChart({ data }: { data: LinePoint[] }) {
   const W = 480, H = 195
   const P = { t: 12, r: 12, b: 32, l: 46 }
   const cW = W - P.l - P.r
   const cH = H - P.t - P.b
-  const MIN_Y = 4, MAX_Y = 10
-  const TICKS_Y = [4, 6, 8, 10]
-  const n = LINE_DATA.length
+  const n  = data.length
 
-  const xAt = (i: number) => P.l + (i / (n - 1)) * cW
-  const yAt = (v: number) => P.t + (1 - (v - MIN_Y) / (MAX_Y - MIN_Y)) * cH
+  const allVals = data.flatMap((d) => [d.income, d.expense]).filter((v) => v > 0)
+  const rawMin  = allVals.length > 0 ? Math.min(...allVals) : 0
+  const { max: MAX_Y, ticks: TICKS_Y } = niceCeil(
+    allVals.length > 0 ? Math.max(...allVals) : 10
+  )
+  const MIN_Y = Math.max(0, Math.floor(rawMin * 0.85))
+
+  const xAt = (i: number) => n > 1 ? P.l + (i / (n - 1)) * cW : P.l + cW / 2
+  const yAt = (v: number) =>
+    MAX_Y === MIN_Y
+      ? P.t + cH / 2
+      : P.t + (1 - (v - MIN_Y) / (MAX_Y - MIN_Y)) * cH
 
   const linePath = (key: 'income' | 'expense') =>
-    LINE_DATA.map((d, i) => `${i === 0 ? 'M' : 'L'}${xAt(i).toFixed(1)},${yAt(d[key]).toFixed(1)}`).join(' ')
+    data.map((d, i) => `${i === 0 ? 'M' : 'L'}${xAt(i).toFixed(1)},${yAt(d[key]).toFixed(1)}`).join(' ')
 
   return (
     <div style={{ height: H }}>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full">
-        {/* horizontal grid lines + y labels */}
         {TICKS_Y.map((v) => (
           <g key={v}>
-            <line
-              x1={P.l} y1={yAt(v)} x2={W - P.r} y2={yAt(v)}
-              stroke="#f3f4f6" strokeWidth={1}
-            />
-            <text
-              x={P.l - 6} y={yAt(v)}
-              fontSize={10} textAnchor="end" dominantBaseline="middle" fill="#9ca3af"
-            >
-              {v}М
+            <line x1={P.l} y1={yAt(v)} x2={W - P.r} y2={yAt(v)} stroke="#f3f4f6" strokeWidth={1} />
+            <text x={P.l - 6} y={yAt(v)} fontSize={10} textAnchor="end" dominantBaseline="middle" fill="#9ca3af">
+              {v > 0 ? `${v}М` : '0'}
             </text>
           </g>
         ))}
 
-        {/* income line */}
-        <path d={linePath('income')} fill="none" stroke="#4ade80" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
-        {LINE_DATA.map((d, i) => (
-          <circle key={i} cx={xAt(i)} cy={yAt(d.income)} r={3.5}
-            fill="#4ade80" stroke="white" strokeWidth={1.5} />
-        ))}
+        {data.length > 1 && (
+          <>
+            <path d={linePath('income')}  fill="none" stroke="#4ade80" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+            <path d={linePath('expense')} fill="none" stroke="#f87171" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+          </>
+        )}
 
-        {/* expense line */}
-        <path d={linePath('expense')} fill="none" stroke="#f87171" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
-        {LINE_DATA.map((d, i) => (
-          <circle key={i} cx={xAt(i)} cy={yAt(d.expense)} r={3.5}
-            fill="#f87171" stroke="white" strokeWidth={1.5} />
-        ))}
-
-        {/* x-axis labels */}
-        {LINE_DATA.map((d, i) => (
-          <text key={i} x={xAt(i)} y={H - 4}
-            fontSize={11} textAnchor="middle" fill="#9ca3af">
-            {d.label}
-          </text>
+        {data.map((d, i) => (
+          <g key={i}>
+            <circle cx={xAt(i)} cy={yAt(d.income)}  r={3.5} fill="#4ade80" stroke="white" strokeWidth={1.5} />
+            <circle cx={xAt(i)} cy={yAt(d.expense)} r={3.5} fill="#f87171" stroke="white" strokeWidth={1.5} />
+            <text x={xAt(i)} y={H - 4} fontSize={11} textAnchor="middle" fill="#9ca3af">{d.label}</text>
+          </g>
         ))}
       </svg>
     </div>
@@ -103,17 +93,19 @@ function RevenueLineChart() {
 
 // ─── Donut / Pie chart ────────────────────────────────────────────────────────
 
-function ExpenseDonutChart() {
+function ExpenseDonutChart({ slices }: { slices: ExpenseSlice[] }) {
   const cx = 100, cy = 100, R = 80, RI = 46
   let angle = -Math.PI / 2
 
-  const segments = PIE_SLICES.map((s) => {
-    const sweep = (s.pct / 100) * 2 * Math.PI
-    const end = angle + sweep
+  const segments = slices.map((s, idx) => {
+    const pct   = Math.max(0, Math.min(100, s.pct))
+    const sweep = (pct / 100) * 2 * Math.PI
+    const end   = angle + sweep
     const large = sweep > Math.PI ? 1 : 0
+    const color = SLICE_COLORS[idx % SLICE_COLORS.length]
 
-    const o1 = polar(cx, cy, R, angle)
-    const o2 = polar(cx, cy, R, end)
+    const o1 = polar(cx, cy, R,  angle)
+    const o2 = polar(cx, cy, R,  end)
     const i1 = polar(cx, cy, RI, angle)
     const i2 = polar(cx, cy, RI, end)
 
@@ -126,23 +118,18 @@ function ExpenseDonutChart() {
     ].join(' ')
 
     angle = end
-    return { ...s, path }
+    return { ...s, path, color }
   })
 
   return (
     <div className="flex items-center gap-5">
-      {/* donut */}
       <div style={{ width: 200, height: 200, flexShrink: 0 }}>
         <svg viewBox="0 0 200 200" className="w-full h-full">
-          {segments.map((s, i) => (
-            <path key={i} d={s.path} fill={s.color} />
-          ))}
+          {segments.map((s, i) => <path key={i} d={s.path} fill={s.color} />)}
         </svg>
       </div>
-
-      {/* legend */}
       <div className="flex flex-col gap-2.5 min-w-0">
-        {PIE_SLICES.map((s) => (
+        {segments.map((s) => (
           <div key={s.label} className="flex items-center gap-2">
             <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: s.color }} />
             <span className="text-xs text-gray-600 flex-1 truncate">{s.label}</span>
@@ -156,51 +143,42 @@ function ExpenseDonutChart() {
 
 // ─── Bar chart ────────────────────────────────────────────────────────────────
 
-function QuarterlyBarChart() {
+function QuarterlyBarChart({ data }: { data: QuarterPoint[] }) {
   const W = 680, H = 195
   const P = { t: 12, r: 16, b: 32, l: 46 }
   const cW = W - P.l - P.r
   const cH = H - P.t - P.b
-  const MAX_Y = 26
-  const TICKS_Y = [0, 5, 10, 15, 20, 25]
-  const n = BAR_DATA.length
-  const slot = cW / n
-  const barW = slot * 0.45
+  const n  = data.length
 
-  const xAt = (i: number) => P.l + slot * i + (slot - barW) / 2
-  const yAt = (v: number) => P.t + (1 - v / MAX_Y) * cH
+  const { max: MAX_Y, ticks: TICKS_Y } = niceCeil(
+    data.length > 0 ? Math.max(...data.map((d) => d.value)) : 10
+  )
+
+  const slot = n > 0 ? cW / n : cW
+  const barW = slot * 0.45
+  const xAt  = (i: number) => P.l + slot * i + (slot - barW) / 2
+  const yAt  = (v: number) => MAX_Y > 0 ? P.t + (1 - v / MAX_Y) * cH : P.t + cH
 
   return (
     <div style={{ height: H }}>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full">
-        {/* horizontal grid lines + y labels */}
         {TICKS_Y.map((v) => (
           <g key={v}>
-            <line
-              x1={P.l} y1={yAt(v)} x2={W - P.r} y2={yAt(v)}
-              stroke="#f3f4f6" strokeWidth={1}
-            />
-            <text
-              x={P.l - 6} y={yAt(v)}
-              fontSize={10} textAnchor="end" dominantBaseline="middle" fill="#9ca3af"
-            >
+            <line x1={P.l} y1={yAt(v)} x2={W - P.r} y2={yAt(v)} stroke="#f3f4f6" strokeWidth={1} />
+            <text x={P.l - 6} y={yAt(v)} fontSize={10} textAnchor="end" dominantBaseline="middle" fill="#9ca3af">
               {v > 0 ? `${v}М` : '0'}
             </text>
           </g>
         ))}
 
-        {/* bars */}
-        {BAR_DATA.map((d, i) => {
+        {data.map((d, i) => {
           const bx = xAt(i)
           const by = yAt(d.value)
-          const bh = yAt(0) - by
+          const bh = Math.max(0, yAt(0) - by)
           return (
             <g key={i}>
               <rect x={bx} y={by} width={barW} height={bh} fill="#3b82f6" rx={3} />
-              <text
-                x={bx + barW / 2} y={H - 4}
-                fontSize={11} textAnchor="middle" fill="#9ca3af"
-              >
+              <text x={bx + barW / 2} y={H - 4} fontSize={11} textAnchor="middle" fill="#9ca3af">
                 {d.label}
               </text>
             </g>
@@ -225,15 +203,9 @@ function LegendItem({ color, label }: { color: string; label: string }) {
 // ─── Insight card ─────────────────────────────────────────────────────────────
 
 function InsightCard({
-  title,
-  main,
-  description,
-  scheme,
+  title, main, description, scheme,
 }: {
-  title: string
-  main: string
-  description: string
-  scheme: 'green' | 'blue' | 'purple'
+  title: string; main: string; description: string; scheme: 'green' | 'blue' | 'purple'
 }) {
   const styles = {
     green:  { wrap: 'bg-green-50  border-green-100',  title: 'text-green-600',  main: 'text-green-700'  },
@@ -250,10 +222,58 @@ function InsightCard({
   )
 }
 
+function InsightCards({ insights }: { insights: AnalyticsInsights }) {
+  return (
+    <div className="flex gap-4">
+      <InsightCard
+        scheme="green"
+        title="Основная тенденция"
+        main="Рост доходов"
+        description={`Доходы выросли на ${insights.incomeGrowthPct}% за период`}
+      />
+      <InsightCard
+        scheme="blue"
+        title="Самая большая статья расхода"
+        main={insights.biggestExpenseCategory}
+        description={`Составляет ${insights.biggestExpensePct}% от общих расходов`}
+      />
+      <InsightCard
+        scheme="purple"
+        title="Прибыльность"
+        main={`${insights.averageMarginPct}% маржа`}
+        description="Средняя рентабельность за период"
+      />
+    </div>
+  )
+}
+
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 export default function AnalyticsPage() {
-  const [period, setPeriod] = useState('Последние 6 месяцев')
+  const [period, setPeriod] = useState<PeriodLabel>('Последние 6 месяцев')
+
+  const [data, setData]       = useState<ReturnType<typeof import('../api/analytics').getAnalytics> extends Promise<infer T> ? T : never | null>(null as any)
+  const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState<string | null>(null)
+
+  // ─── load ────────────────────────────────────────────────────────────────
+
+  const load = useCallback((p: PeriodLabel) => {
+    setLoading(true)
+    setError(null)
+    getAnalytics(p)
+      .then(setData)
+      .catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : 'Ошибка загрузки аналитики')
+      })
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    load(period)
+  }, [period, load])
+
+  // ─── render ──────────────────────────────────────────────────────────────
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -271,7 +291,7 @@ export default function AnalyticsPage() {
             <label className="text-xs font-medium text-gray-600">Период анализа</label>
             <select
               value={period}
-              onChange={(e) => setPeriod(e.target.value)}
+              onChange={(e) => setPeriod(e.target.value as PeriodLabel)}
               className="
                 w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg
                 bg-gray-50 text-gray-700
@@ -279,65 +299,85 @@ export default function AnalyticsPage() {
                 transition-colors
               "
             >
-              {PERIODS.map((p) => (
+              {PERIOD_LABELS.map((p) => (
                 <option key={p} value={p}>{p}</option>
               ))}
             </select>
           </div>
         </div>
 
-        {/* ── top two-column chart row ─────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-4">
-
-          {/* line chart */}
-          <SectionCard title="Динамика доходов и расходов">
-            <div className="flex flex-col gap-3">
-              <RevenueLineChart />
-              <div className="flex items-center gap-4 pt-1">
-                <LegendItem color="#4ade80" label="Доходы" />
-                <LegendItem color="#f87171" label="Расходы" />
-              </div>
-            </div>
-          </SectionCard>
-
-          {/* donut chart */}
-          <SectionCard title="Распределение расходов">
-            <ExpenseDonutChart />
-          </SectionCard>
-
-        </div>
-
-        {/* ── full-width bar chart ─────────────────────────────────────── */}
-        <SectionCard title="Общие доходы по кварталам">
-          <div className="flex flex-col gap-3">
-            <QuarterlyBarChart />
-            <div className="flex items-center gap-4 pt-1">
-              <LegendItem color="#3b82f6" label="Доходы" />
-            </div>
+        {/* ── error state ──────────────────────────────────────────────── */}
+        {error && !loading && (
+          <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 flex items-center justify-between">
+            <span className="text-sm text-red-600">{error}</span>
+            <button
+              onClick={() => load(period)}
+              className="text-sm font-medium text-red-600 hover:text-red-700 underline ml-4 shrink-0"
+            >
+              Повторить
+            </button>
           </div>
-        </SectionCard>
+        )}
 
-        {/* ── insight cards ────────────────────────────────────────────── */}
-        <div className="flex gap-4">
-          <InsightCard
-            scheme="green"
-            title="Основная тенденция"
-            main="Рост доходов"
-            description="Доходы выросли на 26% за последние 7 месяцев"
-          />
-          <InsightCard
-            scheme="blue"
-            title="Самая большая статья расхода"
-            main="Зарплата"
-            description="Составляет 67% от общих расходов"
-          />
-          <InsightCard
-            scheme="purple"
-            title="Прибыльность"
-            main="26% маржа"
-            description="Средняя рентабельность за период"
-          />
-        </div>
+        {/* ── loading state ────────────────────────────────────────────── */}
+        {loading && (
+          <div className="bg-white border border-gray-200 rounded-lg flex items-center justify-center py-20">
+            <span className="text-sm text-gray-400">Загрузка аналитики...</span>
+          </div>
+        )}
+
+        {/* ── charts ───────────────────────────────────────────────────── */}
+        {!loading && !error && data && (
+          <>
+            {/* top two-column row */}
+            <div className="grid grid-cols-2 gap-4">
+              <SectionCard title="Динамика доходов и расходов">
+                <div className="flex flex-col gap-3">
+                  {data.lineChart.length > 0 ? (
+                    <RevenueLineChart data={data.lineChart} />
+                  ) : (
+                    <div className="flex items-center justify-center py-12 text-sm text-gray-400">
+                      Нет данных за период
+                    </div>
+                  )}
+                  <div className="flex items-center gap-4 pt-1">
+                    <LegendItem color="#4ade80" label="Доходы" />
+                    <LegendItem color="#f87171" label="Расходы" />
+                  </div>
+                </div>
+              </SectionCard>
+
+              <SectionCard title="Распределение расходов">
+                {data.expenseDistribution.length > 0 ? (
+                  <ExpenseDonutChart slices={data.expenseDistribution} />
+                ) : (
+                  <div className="flex items-center justify-center py-12 text-sm text-gray-400">
+                    Нет данных за период
+                  </div>
+                )}
+              </SectionCard>
+            </div>
+
+            {/* full-width bar chart */}
+            <SectionCard title="Общие доходы по кварталам">
+              <div className="flex flex-col gap-3">
+                {data.quarterlyIncome.length > 0 ? (
+                  <QuarterlyBarChart data={data.quarterlyIncome} />
+                ) : (
+                  <div className="flex items-center justify-center py-12 text-sm text-gray-400">
+                    Нет данных за период
+                  </div>
+                )}
+                <div className="flex items-center gap-4 pt-1">
+                  <LegendItem color="#3b82f6" label="Доходы" />
+                </div>
+              </div>
+            </SectionCard>
+
+            {/* insight cards */}
+            <InsightCards insights={data.insights} />
+          </>
+        )}
 
       </div>
     </div>

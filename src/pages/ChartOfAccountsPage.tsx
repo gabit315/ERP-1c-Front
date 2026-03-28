@@ -1,32 +1,235 @@
-import { useState, useMemo } from 'react'
-import { Search, ChevronRight } from 'lucide-react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
+import { Search, ChevronRight, X, RefreshCw, ServerCrash, Loader2, Inbox } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
 import StatusBadge from '../components/ui/StatusBadge'
+import { getAccounts, getAccountAnalysis } from '../api/accounts'
+import type { Account, AccountAnalysis } from '../api/accounts'
 
-type AccountType = 'active' | 'passive'
+// ─── helpers ─────────────────────────────────────────────────────────────────
 
-interface Account {
-  code: string
-  name: string
-  type: AccountType
-  balance: string
+function fmt(value: number | null): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  return new Intl.NumberFormat('ru-RU').format(Math.round(value)) + ' ₸'
 }
 
-const accounts: Account[] = [
-  { code: '1010', name: 'Денежные средства в кассе',                                    type: 'active',  balance: '450 000 ₸'    },
-  { code: '1030', name: 'Денежные средства на счетах в банках',                         type: 'active',  balance: '15 000 000 ₸' },
-  { code: '1210', name: 'Краткосрочная дебиторская задолженность покупателей',           type: 'active',  balance: '2 300 000 ₸'  },
-  { code: '1250', name: 'Авансы выданные',                                              type: 'active',  balance: '180 000 ₸'    },
-  { code: '1310', name: 'Сырье и материалы',                                            type: 'active',  balance: '560 000 ₸'    },
-  { code: '2410', name: 'Краткосрочная кредиторская задолженность поставщикам',          type: 'passive', balance: '1 200 000 ₸'  },
-  { code: '3010', name: 'Уставной капитал',                                             type: 'passive', balance: '5 000 000 ₸'  },
-  { code: '5010', name: 'Себестоимость реализованных товаров',                           type: 'active',  balance: '3 200 000 ₸'  },
-  { code: '6010', name: 'Доход от реализации продукции',                                type: 'passive', balance: '8 500 000 ₸'  },
-  { code: '7110', name: 'Расходы по заработной плате',                                  type: 'active',  balance: '4 100 000 ₸'  },
-  { code: '7210', name: 'Расходы на аренду',                                            type: 'active',  balance: '850 000 ₸'    },
-]
+function sideLabel(side: string | null): string {
+  if (side === 'debit') return 'Дт'
+  if (side === 'credit') return 'Кт'
+  return ''
+}
 
-function AccountsTable({ rows }: { rows: Account[] }) {
+// ─── account analysis modal ───────────────────────────────────────────────────
+
+interface AnalysisModalProps {
+  code: string
+  name: string
+  onClose: () => void
+}
+
+function AnalysisModal({ code, name, onClose }: AnalysisModalProps) {
+  const [status, setStatus] = useState<'loading' | 'error' | 'success'>('loading')
+  const [data, setData] = useState<AccountAnalysis | null>(null)
+  const [errorMessage, setErrorMessage] = useState('')
+
+  const load = useCallback(async () => {
+    setStatus('loading')
+    try {
+      const year = new Date().getFullYear()
+      const dateFrom = `${year}-01-01`
+      const dateTo   = `${year}-12-31`
+      const result = await getAccountAnalysis(code, dateFrom, dateTo)
+      setData(result)
+      setStatus('success')
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : 'Неизвестная ошибка')
+      setStatus('error')
+    }
+  }, [code])
+
+  useEffect(() => { void load() }, [load])
+
+  // close on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+
+        {/* header */}
+        <div className="flex items-start justify-between gap-4 px-6 py-4 border-b border-gray-200">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-sm font-semibold text-gray-500">{code}</span>
+              <span className="text-gray-300">·</span>
+              <span className="text-sm font-semibold text-gray-800">{name}</span>
+            </div>
+            {data && (
+              <p className="text-xs text-gray-400 mt-0.5">
+                Период: {data.dateFrom} — {data.dateTo}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors shrink-0"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* body */}
+        <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-5">
+
+          {status === 'loading' && (
+            <div className="flex items-center justify-center py-16 gap-3 text-gray-400">
+              <Loader2 size={20} className="animate-spin" />
+              <span className="text-sm">Загрузка...</span>
+            </div>
+          )}
+
+          {status === 'error' && (
+            <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+              <ServerCrash size={28} className="text-red-400" />
+              <p className="text-sm text-gray-500">{errorMessage}</p>
+              <button
+                onClick={() => void load()}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <RefreshCw size={12} />
+                Повторить
+              </button>
+            </div>
+          )}
+
+          {status === 'success' && data && (
+            <>
+              {/* summary grid */}
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                  Обороты за период
+                </p>
+                <div className="grid grid-cols-4 gap-3">
+                  {[
+                    { label: 'Нач. остаток', amount: data.summary.openingBalanceAmount, side: data.summary.openingBalanceSide },
+                    { label: 'Оборот Дт',   amount: data.summary.turnoverDebit,         side: null },
+                    { label: 'Оборот Кт',   amount: data.summary.turnoverCredit,        side: null },
+                    { label: 'Кон. остаток', amount: data.summary.closingBalanceAmount,  side: data.summary.closingBalanceSide },
+                  ].map(({ label, amount, side }) => (
+                    <div key={label} className="bg-gray-50 rounded-lg p-3.5">
+                      <p className="text-xs text-gray-400 mb-1">{label}</p>
+                      <p className="text-sm font-semibold text-gray-800 tabular-nums">{fmt(amount)}</p>
+                      {side && (
+                        <p className="text-xs text-gray-400 mt-0.5">{sideLabel(side)}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* movements */}
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                  Движения по счёту
+                </p>
+
+                {data.movements.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center gap-2 py-10 text-center border border-gray-200 rounded-lg">
+                    <Inbox size={24} className="text-gray-300" />
+                    <p className="text-sm text-gray-400">Нет движений за период</p>
+                  </div>
+                ) : (
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <table className="w-full text-sm border-collapse">
+                      <thead>
+                        <tr className="border-b border-gray-200 bg-gray-50">
+                          <th className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wider px-4 py-2.5 w-28">Дата</th>
+                          <th className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wider px-4 py-2.5">Описание</th>
+                          <th className="text-right text-xs font-semibold text-gray-400 uppercase tracking-wider px-4 py-2.5 w-32">Дебет</th>
+                          <th className="text-right text-xs font-semibold text-gray-400 uppercase tracking-wider px-4 py-2.5 w-32">Кредит</th>
+                          <th className="text-right text-xs font-semibold text-gray-400 uppercase tracking-wider px-4 py-2.5 w-36">Остаток</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.movements.map((m) => (
+                          <tr key={m.entryId} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
+                            <td className="px-4 py-2.5 text-gray-500 text-xs">{m.date}</td>
+                            <td className="px-4 py-2.5 text-gray-700">
+                              <p className="truncate max-w-xs">{m.description}</p>
+                              {m.counterpartyName && (
+                                <p className="text-xs text-gray-400 mt-0.5 truncate">{m.counterpartyName}</p>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-green-700">
+                              {m.debit != null ? fmt(m.debit) : ''}
+                            </td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-red-600">
+                              {m.credit != null ? fmt(m.credit) : ''}
+                            </td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">
+                              <span>{fmt(m.balanceAmount)}</span>
+                              <span className="text-xs text-gray-400 ml-1">{sideLabel(m.balanceSide)}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── table skeleton ───────────────────────────────────────────────────────────
+
+function TableSkeleton() {
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden animate-pulse">
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr className="border-b border-gray-200 bg-gray-50">
+            {['w-32', '', 'w-36', 'w-44', 'w-36'].map((w, i) => (
+              <th key={i} className={`px-5 py-3 ${w}`}>
+                <div className="h-3 bg-gray-200 rounded w-16" />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: 8 }).map((_, i) => (
+            <tr key={i} className="border-b border-gray-100 last:border-0">
+              <td className="px-5 py-3.5"><div className="h-3.5 bg-gray-200 rounded w-12" /></td>
+              <td className="px-4 py-3.5"><div className="h-3.5 bg-gray-200 rounded w-64" /></td>
+              <td className="px-4 py-3.5"><div className="h-5 bg-gray-100 rounded-full w-20" /></td>
+              <td className="px-4 py-3.5"><div className="h-3.5 bg-gray-100 rounded w-24 ml-auto" /></td>
+              <td className="px-5 py-3.5"><div className="h-3.5 bg-gray-100 rounded w-20" /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ─── accounts table ───────────────────────────────────────────────────────────
+
+interface AccountsTableProps {
+  rows: Account[]
+  onDetails: (account: Account) => void
+}
+
+function AccountsTable({ rows, onDetails }: AccountsTableProps) {
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
       <table className="w-full text-sm border-collapse">
@@ -41,7 +244,7 @@ function AccountsTable({ rows }: { rows: Account[] }) {
             <th className="text-left text-xs font-semibold text-gray-400 tracking-wider uppercase px-4 py-3 w-36">
               Тип
             </th>
-            <th className="text-right text-xs font-semibold text-gray-400 tracking-wider uppercase px-4 py-3 w-44">
+            <th className="text-right text-xs font-semibold text-gray-400 tracking-wider uppercase px-4 py-3 w-48">
               Остаток
             </th>
             <th className="text-left text-xs font-semibold text-gray-400 tracking-wider uppercase px-5 py-3 w-36">
@@ -57,12 +260,10 @@ function AccountsTable({ rows }: { rows: Account[] }) {
               </td>
             </tr>
           ) : (
-            rows.map((account, i) => (
+            rows.map((account) => (
               <tr
                 key={account.code}
-                className={`border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors ${
-                  i % 2 === 0 ? '' : ''
-                }`}
+                className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors"
               >
                 <td className="px-5 py-3.5">
                   <span className="font-mono text-sm font-medium text-gray-700">
@@ -74,15 +275,29 @@ function AccountsTable({ rows }: { rows: Account[] }) {
                 </td>
                 <td className="px-4 py-3.5">
                   <StatusBadge
-                    label={account.type === 'active' ? 'Активный' : 'Пассивный'}
-                    variant={account.type === 'active' ? 'active' : 'passive'}
+                    label={account.accountType === 'active' ? 'Активный' : 'Пассивный'}
+                    variant={account.accountType === 'active' ? 'active' : 'passive'}
                   />
                 </td>
-                <td className="px-4 py-3.5 text-right font-medium text-gray-700 tabular-nums">
-                  {account.balance}
+                <td className="px-4 py-3.5 text-right tabular-nums">
+                  {account.balanceAmount != null ? (
+                    <span className="font-medium text-gray-700">
+                      {fmt(account.balanceAmount)}
+                      {account.balanceSide && (
+                        <span className="text-xs text-gray-400 ml-1.5">
+                          {sideLabel(account.balanceSide)}
+                        </span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="text-gray-400">—</span>
+                  )}
                 </td>
                 <td className="px-5 py-3.5">
-                  <button className="flex items-center gap-0.5 text-blue-600 hover:text-blue-700 text-sm transition-colors">
+                  <button
+                    onClick={() => onDetails(account)}
+                    className="flex items-center gap-0.5 text-blue-600 hover:text-blue-700 text-sm transition-colors"
+                  >
                     Подробнее
                     <ChevronRight size={14} />
                   </button>
@@ -96,18 +311,38 @@ function AccountsTable({ rows }: { rows: Account[] }) {
   )
 }
 
+// ─── page ─────────────────────────────────────────────────────────────────────
+
+type LoadStatus = 'loading' | 'error' | 'success'
+
 export default function ChartOfAccountsPage() {
+  const [status, setStatus] = useState<LoadStatus>('loading')
+  const [accounts, setAccounts] = useState<Account[]>([])
+  const [errorMessage, setErrorMessage] = useState('')
   const [query, setQuery] = useState('')
+  const [modalAccount, setModalAccount] = useState<Account | null>(null)
+
+  const load = useCallback(async () => {
+    setStatus('loading')
+    try {
+      const data = await getAccounts()
+      setAccounts(data)
+      setStatus('success')
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : 'Неизвестная ошибка')
+      setStatus('error')
+    }
+  }, [])
+
+  useEffect(() => { void load() }, [load])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return accounts
     return accounts.filter(
-      (a) =>
-        a.code.includes(q) ||
-        a.name.toLowerCase().includes(q)
+      (a) => a.code.includes(q) || a.name.toLowerCase().includes(q)
     )
-  }, [query])
+  }, [query, accounts])
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -141,9 +376,42 @@ export default function ChartOfAccountsPage() {
           </div>
         </div>
 
-        <AccountsTable rows={filtered} />
+        {/* table area */}
+        {status === 'loading' && <TableSkeleton />}
+
+        {status === 'error' && (
+          <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+            <div className="p-4 bg-red-50 rounded-full">
+              <ServerCrash size={32} className="text-red-400" />
+            </div>
+            <div>
+              <p className="text-gray-700 font-medium">Не удалось загрузить план счетов</p>
+              <p className="text-sm text-gray-400 mt-1">{errorMessage}</p>
+            </div>
+            <button
+              onClick={() => void load()}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <RefreshCw size={14} />
+              Повторить
+            </button>
+          </div>
+        )}
+
+        {status === 'success' && (
+          <AccountsTable rows={filtered} onDetails={setModalAccount} />
+        )}
 
       </div>
+
+      {/* analysis modal */}
+      {modalAccount && (
+        <AnalysisModal
+          code={modalAccount.code}
+          name={modalAccount.name}
+          onClose={() => setModalAccount(null)}
+        />
+      )}
     </div>
   )
 }

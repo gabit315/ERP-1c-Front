@@ -1,53 +1,32 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Search, ChevronRight } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
+import { getOperations, type OperationItem } from '../api/operations'
 
-// ─── data ─────────────────────────────────────────────────────────────────────
+// ─── period config ─────────────────────────────────────────────────────────────
 
-interface JournalItem {
-  id: string
-  date: string
-  number: string
-  description: string
-  entriesCount: number
+const PERIODS = ['Март 2026', 'Февраль 2026', 'Январь 2026', 'Весь период'] as const
+type Period = (typeof PERIODS)[number]
+
+// map label -> { year, month } for filtering; null = show all
+const PERIOD_FILTER: Record<Period, { year: number; month: number } | null> = {
+  'Март 2026':    { year: 2026, month: 3 },
+  'Февраль 2026': { year: 2026, month: 2 },
+  'Январь 2026':  { year: 2026, month: 1 },
+  'Весь период':  null,
 }
 
-const DATA: JournalItem[] = [
-  {
-    id: '1',
-    date: '17.03.2026',
-    number: 'ОП-00124',
-    description: 'Оплата коммунальных услуг за март',
-    entriesCount: 2,
-  },
-  {
-    id: '2',
-    date: '17.03.2026',
-    number: 'ОП-00123',
-    description: 'Поступление оплаты за обучение',
-    entriesCount: 1,
-  },
-  {
-    id: '3',
-    date: '16.03.2026',
-    number: 'ОП-00122',
-    description: 'Выплата заработной платы преподавателям',
-    entriesCount: 1,
-  },
-  {
-    id: '4',
-    date: '15.03.2026',
-    number: 'ОП-00121',
-    description: 'Покупка канцелярских товаров и мебели',
-    entriesCount: 2,
-  },
-]
+// ─── helpers ──────────────────────────────────────────────────────────────────
 
-const PERIODS = ['Март 2026', 'Февраль 2026', 'Январь 2026', 'Весь период']
+function entriesLabel(n: number): string {
+  if (n === 1) return '1 проводка'
+  if (n >= 2 && n <= 4) return `${n} проводки`
+  return `${n} проводок`
+}
 
 // ─── sub-components ───────────────────────────────────────────────────────────
 
-function JournalRow({ item }: { item: JournalItem }) {
+function JournalRow({ item }: { item: OperationItem }) {
   return (
     <div className="bg-white border border-gray-200 rounded-lg px-5 py-4 flex items-center gap-4 hover:bg-gray-50 transition-colors cursor-default">
       {/* date */}
@@ -67,7 +46,7 @@ function JournalRow({ item }: { item: JournalItem }) {
 
       {/* entry count */}
       <span className="text-xs text-gray-400 shrink-0">
-        {item.entriesCount} проводок
+        {entriesLabel(item.entriesCount)}
       </span>
 
       {/* chevron */}
@@ -79,18 +58,59 @@ function JournalRow({ item }: { item: JournalItem }) {
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 export default function OperationsJournalPage() {
+  const [operations, setOperations] = useState<OperationItem[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [error, setError]           = useState<string | null>(null)
+
   const [query, setQuery]   = useState('')
-  const [period, setPeriod] = useState('Март 2026')
+  const [period, setPeriod] = useState<Period>('Март 2026')
+
+  // ─── load ──────────────────────────────────────────────────────────────────
+
+  const load = () => {
+    setLoading(true)
+    setError(null)
+    getOperations()
+      .then(setOperations)
+      .catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : 'Ошибка загрузки')
+      })
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  // ─── filter + search ───────────────────────────────────────────────────────
 
   const rows = useMemo(() => {
+    let list = operations
+
+    // period filter
+    const pf = PERIOD_FILTER[period]
+    if (pf) {
+      list = list.filter((op) => {
+        const m = /^(\d{4})-(\d{2})/.exec(op.dateRaw)
+        if (!m) return false
+        return Number(m[1]) === pf.year && Number(m[2]) === pf.month
+      })
+    }
+
+    // search
     const q = query.trim().toLowerCase()
-    if (!q) return DATA
-    return DATA.filter(
-      (item) =>
-        item.description.toLowerCase().includes(q) ||
-        item.number.toLowerCase().includes(q),
-    )
-  }, [query])
+    if (q) {
+      list = list.filter(
+        (op) =>
+          op.number.toLowerCase().includes(q) ||
+          op.description.toLowerCase().includes(q)
+      )
+    }
+
+    return list
+  }, [operations, query, period])
+
+  // ─── render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -134,7 +154,7 @@ export default function OperationsJournalPage() {
               <label className="text-xs font-medium text-gray-600">Период</label>
               <select
                 value={period}
-                onChange={(e) => setPeriod(e.target.value)}
+                onChange={(e) => setPeriod(e.target.value as Period)}
                 className="
                   w-full px-3 py-2.5 text-sm
                   border border-gray-200 rounded-lg
@@ -154,7 +174,21 @@ export default function OperationsJournalPage() {
 
         {/* ── journal list ─────────────────────────────────────────────── */}
         <div className="flex flex-col gap-2">
-          {rows.length === 0 ? (
+          {loading ? (
+            <div className="bg-white border border-gray-200 rounded-lg px-6 py-12 text-center text-sm text-gray-400">
+              Загрузка...
+            </div>
+          ) : error ? (
+            <div className="bg-white border border-gray-200 rounded-lg px-6 py-12 flex flex-col items-center gap-3">
+              <span className="text-sm text-red-500">{error}</span>
+              <button
+                onClick={load}
+                className="text-sm font-medium text-blue-600 hover:text-blue-700"
+              >
+                Повторить
+              </button>
+            </div>
+          ) : rows.length === 0 ? (
             <div className="bg-white border border-gray-200 rounded-lg px-6 py-12 text-center text-sm text-gray-400">
               Ничего не найдено
             </div>

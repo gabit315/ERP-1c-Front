@@ -1,31 +1,25 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Download, TrendingUp, TrendingDown, DollarSign, Wallet } from 'lucide-react'
 import PageHeaderWithAction from '../components/ui/PageHeaderWithAction'
 import KPIStatCard from '../components/ui/KPIStatCard'
 import SectionCard from '../components/ui/SectionCard'
+import { getGeneralSummary, type GeneralSummary } from '../api/generalSummary'
 
-// ─── static data ──────────────────────────────────────────────────────────────
+// ─── period presets ───────────────────────────────────────────────────────────
 
-const PERIODS = ['I квартал 2026', 'Март 2026', 'Февраль 2026', 'Январь 2026', 'Весь год']
+interface PeriodPreset {
+  label: string
+  from: string
+  to: string
+}
 
-const MONTHS = [
-  { name: 'Январь', income: 7_200_000, expense: 5_800_000 },
-  { name: 'Февраль', income: 7_800_000, expense: 6_100_000 },
-  { name: 'Март',    income: 8_200_000, expense: 6_100_000 },
+const PERIODS: PeriodPreset[] = [
+  { label: 'I квартал 2026', from: '2026-01-01', to: '2026-03-31' },
+  { label: 'Март 2026',      from: '2026-03-01', to: '2026-03-31' },
+  { label: 'Февраль 2026',   from: '2026-02-01', to: '2026-02-28' },
+  { label: 'Январь 2026',    from: '2026-01-01', to: '2026-01-31' },
+  { label: 'Весь год',       from: '2026-01-01', to: '2026-12-31' },
 ]
-
-const EXPENSES = [
-  { label: 'Зарплата',          amount: 4_100_000, pct: 67 },
-  { label: 'Аренда',            amount: 850_000,   pct: 14 },
-  { label: 'Коммунальные услуги', amount: 320_000, pct: 5  },
-  { label: 'Канцелярия',        amount: 280_000,   pct: 5  },
-  { label: 'Прочие расходы',    amount: 550_000,   pct: 9  },
-]
-
-const EXPENSE_TOTAL = 6_100_000
-
-// Normalize monthly bars against a fixed ceiling so widths are stable
-const BAR_MAX = 9_000_000
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -37,43 +31,74 @@ function fmtMoney(v: number): string {
   return fmt(v) + ' ₸'
 }
 
+function exportToCsv(data: GeneralSummary) {
+  const lines: string[][] = []
+
+  lines.push(['Период', `${data.dateFrom} — ${data.dateTo}`])
+  lines.push([])
+  lines.push(['Раздел', 'Показатель', 'Сумма'])
+  lines.push(['Итоги', 'Доходы',       String(data.totals.income)])
+  lines.push(['Итоги', 'Расходы',      String(data.totals.expenses)])
+  lines.push(['Итоги', 'Чистая прибыль', String(data.totals.netProfit)])
+  lines.push(['Итоги', 'Остаток денег', String(data.totals.cashBalance)])
+  lines.push([])
+  lines.push(['Месяц', 'Доходы', 'Расходы', 'Прибыль'])
+  data.monthly.forEach((m) =>
+    lines.push([m.month, String(m.income), String(m.expense), String(m.profit)])
+  )
+  lines.push([])
+  lines.push(['Статья расходов', 'Сумма', '%'])
+  data.expenseStructure.forEach((e) =>
+    lines.push([e.label, String(e.amount), String(e.pct)])
+  )
+
+  const csv = lines
+    .map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+    .join('\n')
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `general_summary_${data.dateFrom}_${data.dateTo}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 // ─── sub-components ───────────────────────────────────────────────────────────
 
-function MonthBlock({ name, income, expense }: { name: string; income: number; expense: number }) {
-  const profit = income - expense
-  const incPct = Math.round((income / BAR_MAX) * 100)
-  const expPct = Math.round((expense / BAR_MAX) * 100)
+function MonthBlock({ name, income, expense, profit, barMax }: {
+  name: string
+  income: number
+  expense: number
+  profit: number
+  barMax: number
+}) {
+  const incPct = barMax > 0 ? Math.round((income  / barMax) * 100) : 0
+  const expPct = barMax > 0 ? Math.round((expense / barMax) * 100) : 0
 
   return (
     <div className="py-3.5 border-b border-gray-100 last:border-0">
-      {/* month + profit */}
       <div className="flex items-center justify-between mb-2.5">
         <span className="text-sm font-medium text-gray-700">{name}</span>
-        <span className="text-sm font-medium text-green-600">+{fmtMoney(profit)}</span>
+        <span className={`text-sm font-medium ${profit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+          {profit >= 0 ? '+' : '−'}{fmtMoney(Math.abs(profit))}
+        </span>
       </div>
 
-      {/* income bar */}
       <div className="flex items-center gap-2 mb-1.5">
         <span className="text-xs text-gray-400 w-14 shrink-0">Доходы</span>
         <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-green-400 rounded-full"
-            style={{ width: `${incPct}%` }}
-          />
+          <div className="h-full bg-green-400 rounded-full" style={{ width: `${incPct}%` }} />
         </div>
         <span className="text-xs tabular-nums text-gray-600 w-28 text-right shrink-0">
           {fmtMoney(income)}
         </span>
       </div>
 
-      {/* expense bar */}
       <div className="flex items-center gap-2">
         <span className="text-xs text-gray-400 w-14 shrink-0">Расходы</span>
         <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-red-300 rounded-full"
-            style={{ width: `${expPct}%` }}
-          />
+          <div className="h-full bg-red-300 rounded-full" style={{ width: `${expPct}%` }} />
         </div>
         <span className="text-xs tabular-nums text-gray-600 w-28 text-right shrink-0">
           {fmtMoney(expense)}
@@ -96,10 +121,7 @@ function ExpenseRow({ label, amount, pct }: { label: string; amount: number; pct
         </div>
       </div>
       <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-        <div
-          className="h-full bg-blue-500 rounded-full"
-          style={{ width: `${pct}%` }}
-        />
+        <div className="h-full bg-blue-500 rounded-full" style={{ width: `${pct}%` }} />
       </div>
     </div>
   )
@@ -108,7 +130,55 @@ function ExpenseRow({ label, amount, pct }: { label: string; amount: number; pct
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 export default function GeneralSummaryPage() {
-  const [period, setPeriod] = useState('I квартал 2026')
+  const [period, setPeriod] = useState(PERIODS[0].label)
+  const [dateFrom, setDateFrom] = useState(PERIODS[0].from)
+  const [dateTo, setDateTo]     = useState(PERIODS[0].to)
+
+  const [data, setData]       = useState<GeneralSummary | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState<string | null>(null)
+
+  // ─── load ────────────────────────────────────────────────────────────────
+
+  const load = useCallback((from: string, to: string) => {
+    setLoading(true)
+    setError(null)
+    getGeneralSummary(from, to)
+      .then(setData)
+      .catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : 'Ошибка загрузки сводки')
+      })
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    load(dateFrom, dateTo)
+  }, [dateFrom, dateTo, load])
+
+  // ─── period change ────────────────────────────────────────────────────────
+
+  const handlePeriodChange = (label: string) => {
+    setPeriod(label)
+    const preset = PERIODS.find((p) => p.label === label)
+    if (preset) {
+      setDateFrom(preset.from)
+      setDateTo(preset.to)
+    }
+  }
+
+  // ─── derived ──────────────────────────────────────────────────────────────
+
+  const totals = data?.totals
+  const monthly = data?.monthly ?? []
+  const barMax = monthly.length > 0
+    ? Math.max(...monthly.map((m) => Math.max(m.income, m.expense)))
+    : 1
+
+  const rentability = totals && totals.income > 0
+    ? Math.round((totals.netProfit / totals.income) * 100)
+    : null
+
+  // ─── render ──────────────────────────────────────────────────────────────
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -121,7 +191,9 @@ export default function GeneralSummaryPage() {
           action={
             <button
               type="button"
-              className="flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors"
+              disabled={!data || loading}
+              onClick={() => data && exportToCsv(data)}
+              className="flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 rounded-lg transition-colors"
             >
               <Download size={15} />
               Экспорт
@@ -136,7 +208,7 @@ export default function GeneralSummaryPage() {
               <label className="text-xs font-medium text-gray-600">Период</label>
               <select
                 value={period}
-                onChange={(e) => setPeriod(e.target.value)}
+                onChange={(e) => handlePeriodChange(e.target.value)}
                 className="
                   w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg
                   bg-gray-50 text-gray-700
@@ -145,87 +217,117 @@ export default function GeneralSummaryPage() {
                 "
               >
                 {PERIODS.map((p) => (
-                  <option key={p} value={p}>{p}</option>
+                  <option key={p.label} value={p.label}>{p.label}</option>
                 ))}
               </select>
             </div>
           </div>
         </div>
 
+        {/* error state */}
+        {error && !loading && (
+          <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 flex items-center justify-between">
+            <span className="text-sm text-red-600">{error}</span>
+            <button
+              onClick={() => load(dateFrom, dateTo)}
+              className="text-sm font-medium text-red-600 hover:text-red-700 underline ml-4 shrink-0"
+            >
+              Повторить
+            </button>
+          </div>
+        )}
+
         {/* ── KPI cards ───────────────────────────────────────────────── */}
         <div className="flex gap-4">
           <KPIStatCard
             title="Общие доходы"
-            value={fmtMoney(23_200_000)}
+            value={loading ? '...' : totals ? fmtMoney(totals.income) : '—'}
             icon={<TrendingUp size={18} className="text-green-600" />}
             iconBg="bg-green-50"
-            trend="up"
-            trendLabel="+8.2% за период"
           />
           <KPIStatCard
             title="Общие расходы"
-            value={fmtMoney(18_000_000)}
-            subtitle={fmt(18_000_000) + ' за период'}
+            value={loading ? '...' : totals ? fmtMoney(totals.expenses) : '—'}
+            subtitle={totals ? fmt(totals.expenses) + ' за период' : undefined}
             icon={<TrendingDown size={18} className="text-red-500" />}
             iconBg="bg-red-50"
           />
           <KPIStatCard
             title="Чистая прибыль"
-            value={fmtMoney(5_200_000)}
+            value={loading ? '...' : totals ? fmtMoney(totals.netProfit) : '—'}
+            subtitle={rentability !== null ? `${rentability}% рентабельность` : undefined}
             icon={<DollarSign size={18} className="text-blue-600" />}
             iconBg="bg-blue-50"
-            trend="up"
-            trendLabel="+22.4% рентабельность"
           />
           <KPIStatCard
             title="Остаток денег"
-            value={fmtMoney(15_450_000)}
+            value={loading ? '...' : totals ? fmtMoney(totals.cashBalance) : '—'}
             subtitle="На счетах и в кассе"
             icon={<Wallet size={18} className="text-purple-600" />}
             iconBg="bg-purple-50"
           />
         </div>
 
-        {/* ── two-column lower section ─────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-4">
+        {/* loading / empty for lower sections */}
+        {loading && (
+          <div className="bg-white border border-gray-200 rounded-lg flex items-center justify-center py-16">
+            <span className="text-sm text-gray-400">Загрузка сводки...</span>
+          </div>
+        )}
 
-          {/* left: monthly income vs expense */}
-          <SectionCard title="Доходы и расходы по месяцам">
-            <div className="flex flex-col">
-              {MONTHS.map((m) => (
-                <MonthBlock
-                  key={m.name}
-                  name={m.name}
-                  income={m.income}
-                  expense={m.expense}
-                />
-              ))}
-            </div>
-          </SectionCard>
+        {!loading && !error && data && (
+          <div className="grid grid-cols-2 gap-4">
 
-          {/* right: expense structure */}
-          <SectionCard title="Структура расходов">
-            <div className="flex flex-col">
-              {EXPENSES.map((e) => (
-                <ExpenseRow
-                  key={e.label}
-                  label={e.label}
-                  amount={e.amount}
-                  pct={e.pct}
-                />
-              ))}
-
-              {/* total row */}
-              <div className="flex items-center justify-between pt-3.5 mt-1 border-t border-gray-200">
-                <span className="text-sm font-semibold text-gray-700">Итого</span>
-                <span className="text-sm font-semibold text-gray-800 tabular-nums">
-                  {fmtMoney(EXPENSE_TOTAL)}
-                </span>
+            {/* left: monthly income vs expense */}
+            <SectionCard title="Доходы и расходы по месяцам">
+              <div className="flex flex-col">
+                {monthly.length === 0 ? (
+                  <p className="text-sm text-gray-400 py-4 text-center">Нет данных за период</p>
+                ) : (
+                  monthly.map((m) => (
+                    <MonthBlock
+                      key={m.month}
+                      name={m.month}
+                      income={m.income}
+                      expense={m.expense}
+                      profit={m.profit}
+                      barMax={barMax}
+                    />
+                  ))
+                )}
               </div>
-            </div>
-          </SectionCard>
+            </SectionCard>
 
-        </div>
+            {/* right: expense structure */}
+            <SectionCard title="Структура расходов">
+              <div className="flex flex-col">
+                {data.expenseStructure.length === 0 ? (
+                  <p className="text-sm text-gray-400 py-4 text-center">Нет данных за период</p>
+                ) : (
+                  <>
+                    {data.expenseStructure.map((e) => (
+                      <ExpenseRow
+                        key={e.label}
+                        label={e.label}
+                        amount={e.amount}
+                        pct={e.pct}
+                      />
+                    ))}
+
+                    {/* total row */}
+                    <div className="flex items-center justify-between pt-3.5 mt-1 border-t border-gray-200">
+                      <span className="text-sm font-semibold text-gray-700">Итого</span>
+                      <span className="text-sm font-semibold text-gray-800 tabular-nums">
+                        {fmtMoney(data.expenseTotal)}
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
+            </SectionCard>
+
+          </div>
+        )}
 
       </div>
     </div>
