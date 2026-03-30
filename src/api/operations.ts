@@ -84,7 +84,14 @@ export async function createOperation(payload: CreateOperationPayload): Promise<
     body: JSON.stringify(payload),
   })
   if (!res.ok) {
-    throw new Error(`Ошибка сервера: ${res.status}`)
+    let message = `Ошибка сервера: ${res.status}`
+    try {
+      const body = (await res.json()) as { detail?: string }
+      if (body.detail) message = body.detail
+    } catch {
+      // ignore json parse errors
+    }
+    throw new Error(message)
   }
 }
 
