@@ -3,9 +3,23 @@ import { Pencil, Trash2 } from 'lucide-react'
 interface RowActionsProps {
   onEdit?: () => void
   onDelete?: () => void
+  disabled?: boolean
 }
 
-export default function RowActions({ onEdit, onDelete }: RowActionsProps) {
+export default function RowActions({ onEdit, onDelete, disabled = false }: RowActionsProps) {
+  if (disabled) {
+    return (
+      <div className="flex items-center gap-1" title="Функция временно недоступна">
+        <span className="p-1.5 rounded text-blue-300 cursor-not-allowed opacity-50">
+          <Pencil size={15} />
+        </span>
+        <span className="p-1.5 rounded text-red-300 cursor-not-allowed opacity-50">
+          <Trash2 size={15} />
+        </span>
+      </div>
+    )
+  }
+
   return (
     <div className="flex items-center gap-1">
       <button

@@ -1,40 +1,67 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Printer, Download, Info } from 'lucide-react'
 import PageHeaderWithAction from '../components/ui/PageHeaderWithAction'
+import { getTrialBalance, type TrialBalanceRow, type TrialBalanceTotals } from '../api/osvReport'
 
-// ─── data ─────────────────────────────────────────────────────────────────────
+// ─── period presets ───────────────────────────────────────────────────────────
 
-interface AccountRow {
-  code: string
-  name: string
-  openD: number | null
-  openC: number | null
-  turnD: number | null
-  turnC: number | null
-  closeD: number | null
-  closeC: number | null
+interface PeriodPreset {
+  label: string
+  from: string
+  to: string
 }
 
-const DATA: AccountRow[] = [
-  { code: '1010', name: 'Денежные средства в кассе',                     openD: 400_000,    openC: null,  turnD: 250_000,   turnC: 200_000,  closeD: 450_000,    closeC: null },
-  { code: '1030', name: 'Денежные средства на счетах в банках',           openD: 14_000_000, openC: null,  turnD: 3_500_000, turnC: 2_500_000, closeD: 15_000_000, closeC: null },
-  { code: '1210', name: 'Дебиторская задолженность покупателей',          openD: 2_000_000,  openC: null,  turnD: 500_000,   turnC: 200_000,  closeD: 2_300_000,  closeC: null },
-  { code: '1310', name: 'Сырье и материалы',                              openD: 500_000,    openC: null,  turnD: 150_000,   turnC: 90_000,   closeD: 560_000,    closeC: null },
-  { code: '2410', name: 'Кредиторская задолженность поставщикам',         openD: 1_000_000,  openC: null,  turnD: 100_000,   turnC: 300_000,  closeD: 1_200_000,  closeC: null },
-  { code: '6010', name: 'Доход от реализации продукции',                  openD: 7_500_000,  openC: null,  turnD: null,      turnC: 1_000_000, closeD: 8_500_000, closeC: null },
-  { code: '7110', name: 'Расходы по заработной плате',                    openD: 3_500_000,  openC: null,  turnD: 600_000,   turnC: null,     closeD: 4_100_000,  closeC: null },
-  { code: '7210', name: 'Расходы на аренду',                              openD: 700_000,    openC: null,  turnD: 150_000,   turnC: null,     closeD: 850_000,    closeC: null },
-  { code: '7310', name: 'Коммунальные расходы',                           openD: 250_000,    openC: null,  turnD: 70_000,    turnC: null,     closeD: 320_000,    closeC: null },
+const PERIODS: PeriodPreset[] = [
+  { label: 'Март 2026',      from: '2026-03-01', to: '2026-03-31' },
+  { label: 'Февраль 2026',   from: '2026-02-01', to: '2026-02-28' },
+  { label: 'Январь 2026',    from: '2026-01-01', to: '2026-01-31' },
+  { label: 'I квартал 2026', from: '2026-01-01', to: '2026-03-31' },
 ]
-
-const PERIODS = ['Март 2026', 'Февраль 2026', 'Январь 2026', 'I квартал 2026']
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-/** Format a number using Russian locale (space thousands separator), dash for null/zero */
 function fmt(v: number | null): string {
-  if (v === null || v === 0) return '—'
+  if (v === null) return '—'
   return v.toLocaleString('ru-RU')
+}
+
+function exportToCsv(rows: TrialBalanceRow[], totals: TrialBalanceTotals | null, dateFrom: string, dateTo: string) {
+  const header = [
+    'Счет', 'Название счета',
+    'Нач. остаток Дебет', 'Нач. остаток Кредит',
+    'Обороты Дебет', 'Обороты Кредит',
+    'Кон. остаток Дебет', 'Кон. остаток Кредит',
+  ]
+
+  const toCell = (v: number | null) => (v === null ? '' : String(v))
+
+  const dataRows = rows.map((r) => [
+    r.code, r.name,
+    toCell(r.openD), toCell(r.openC),
+    toCell(r.turnD), toCell(r.turnC),
+    toCell(r.closeD), toCell(r.closeC),
+  ])
+
+  if (totals) {
+    dataRows.push([
+      'ИТОГО', '',
+      toCell(totals.openD), toCell(totals.openC),
+      toCell(totals.turnD), toCell(totals.turnC),
+      toCell(totals.closeD), toCell(totals.closeC),
+    ])
+  }
+
+  const csv = [header, ...dataRows]
+    .map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(','))
+    .join('\n')
+
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `osv_${dateFrom}_${dateTo}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 // ─── shared class strings ─────────────────────────────────────────────────────
@@ -43,32 +70,69 @@ const inputCls =
   'w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-700 ' +
   'focus:outline-none focus:ring-1 focus:ring-blue-300 focus:border-blue-300 transition-colors'
 
-// header cell — group label row
 const thGroupCls =
   'text-center text-xs font-semibold text-gray-400 tracking-wider uppercase ' +
   'px-4 py-2.5 bg-gray-50 border-b border-gray-100'
 
-// header cell — sub-header row
 const thSubCls =
   'text-right text-xs font-semibold text-gray-400 tracking-wider uppercase ' +
   'px-4 py-2 bg-gray-50 border-b border-gray-200'
 
-// body cell — numeric
 const tdNumCls = 'px-4 py-3.5 text-right tabular-nums text-sm text-gray-600'
-
-// body cell — numeric, closing balance (slightly bolder)
 const tdNumCloseCls = 'px-4 py-3.5 text-right tabular-nums text-sm font-medium text-gray-700'
+const tdTotalCls = 'px-4 py-3 text-right tabular-nums text-sm font-semibold text-gray-800 bg-gray-50'
 
 // ─── table ────────────────────────────────────────────────────────────────────
 
-function OsvTable() {
+function OsvTable({
+  rows,
+  totals,
+  loading,
+  error,
+  onRetry,
+}: {
+  rows: TrialBalanceRow[]
+  totals: TrialBalanceTotals | null
+  loading: boolean
+  error: string | null
+  onRetry: () => void
+}) {
+  if (loading) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg flex items-center justify-center py-16">
+        <span className="text-sm text-gray-400">Загрузка отчёта...</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg flex flex-col items-center justify-center py-16 gap-3">
+        <span className="text-sm text-red-500">{error}</span>
+        <button
+          onClick={onRetry}
+          className="text-sm font-medium text-blue-600 hover:text-blue-700"
+        >
+          Повторить
+        </button>
+      </div>
+    )
+  }
+
+  if (rows.length === 0) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg flex items-center justify-center py-16">
+        <span className="text-sm text-gray-400">Нет данных за выбранный период</span>
+      </div>
+    )
+  }
+
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
       <table className="w-full text-sm border-collapse">
         <thead>
           {/* ── row 1: group labels ─────────────────────────────────────── */}
           <tr>
-            {/* СЧЕТ — spans both header rows */}
             <th
               rowSpan={2}
               className="
@@ -80,8 +144,6 @@ function OsvTable() {
             >
               Счет
             </th>
-
-            {/* НАЗВАНИЕ СЧЕТА — spans both header rows */}
             <th
               rowSpan={2}
               className="
@@ -93,7 +155,6 @@ function OsvTable() {
             >
               Название счета
             </th>
-
             <th colSpan={2} className={`${thGroupCls} border-r border-gray-200`}>
               Начальный остаток
             </th>
@@ -105,7 +166,7 @@ function OsvTable() {
             </th>
           </tr>
 
-          {/* ── row 2: column sub-headers ───────────────────────────────── */}
+          {/* ── row 2: sub-headers ──────────────────────────────────────── */}
           <tr>
             <th className={thSubCls}>Дебет</th>
             <th className={`${thSubCls} border-r border-gray-200`}>Кредит</th>
@@ -117,36 +178,43 @@ function OsvTable() {
         </thead>
 
         <tbody>
-          {DATA.map((row) => (
+          {rows.map((row) => (
             <tr
               key={row.code}
               className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors"
             >
-              {/* Account code */}
               <td className="px-5 py-3.5 border-r border-gray-100">
                 <span className="font-mono text-sm font-medium text-gray-700">
                   {row.code}
                 </span>
               </td>
-
-              {/* Account name */}
               <td className="px-4 py-3.5 text-gray-700 border-r border-gray-100">
                 {row.name}
               </td>
-
-              {/* Opening balance */}
               <td className={tdNumCls}>{fmt(row.openD)}</td>
               <td className={`${tdNumCls} border-r border-gray-100`}>{fmt(row.openC)}</td>
-
-              {/* Turnovers */}
               <td className={tdNumCls}>{fmt(row.turnD)}</td>
               <td className={`${tdNumCls} border-r border-gray-100`}>{fmt(row.turnC)}</td>
-
-              {/* Closing balance — bolder */}
               <td className={tdNumCloseCls}>{fmt(row.closeD)}</td>
               <td className={tdNumCloseCls}>{fmt(row.closeC)}</td>
             </tr>
           ))}
+
+          {/* totals row — only if backend returned them */}
+          {totals && (
+            <tr className="border-t border-gray-200">
+              <td className="px-5 py-3 font-semibold text-xs text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-100">
+                Итого
+              </td>
+              <td className="px-4 py-3 bg-gray-50 border-r border-gray-100" />
+              <td className={tdTotalCls}>{fmt(totals.openD)}</td>
+              <td className={`${tdTotalCls} border-r border-gray-100`}>{fmt(totals.openC)}</td>
+              <td className={tdTotalCls}>{fmt(totals.turnD)}</td>
+              <td className={`${tdTotalCls} border-r border-gray-100`}>{fmt(totals.turnC)}</td>
+              <td className={tdTotalCls}>{fmt(totals.closeD)}</td>
+              <td className={tdTotalCls}>{fmt(totals.closeC)}</td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>
@@ -156,9 +224,50 @@ function OsvTable() {
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 export default function OsvReportPage() {
-  const [period, setPeriod]    = useState('Март 2026')
-  const [dateFrom, setDateFrom] = useState('2026-03-01')
-  const [dateTo, setDateTo]     = useState('2026-03-31')
+  const [period, setPeriod]     = useState(PERIODS[0].label)
+  const [dateFrom, setDateFrom] = useState(PERIODS[0].from)
+  const [dateTo, setDateTo]     = useState(PERIODS[0].to)
+
+  const [rows, setRows]       = useState<TrialBalanceRow[]>([])
+  const [totals, setTotals]   = useState<TrialBalanceTotals | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState<string | null>(null)
+
+  // ─── load ────────────────────────────────────────────────────────────────
+
+  const load = useCallback((from: string, to: string) => {
+    if (!from || !to) return
+    setLoading(true)
+    setError(null)
+    getTrialBalance(from, to)
+      .then((report) => {
+        setRows(report.rows)
+        setTotals(report.totals)
+      })
+      .catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : 'Ошибка загрузки отчёта')
+      })
+      .finally(() => setLoading(false))
+  }, [])
+
+  // reload when dates change
+  useEffect(() => {
+    load(dateFrom, dateTo)
+  }, [dateFrom, dateTo, load])
+
+  // ─── period preset handler ────────────────────────────────────────────────
+
+  const handlePeriodChange = (label: string) => {
+    setPeriod(label)
+    const preset = PERIODS.find((p) => p.label === label)
+    if (preset) {
+      setDateFrom(preset.from)
+      setDateTo(preset.to)
+      // useEffect on dateFrom/dateTo will trigger reload
+    }
+  }
+
+  // ─── render ──────────────────────────────────────────────────────────────
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -172,6 +281,7 @@ export default function OsvReportPage() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
+                onClick={() => window.print()}
                 className="flex items-center gap-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 px-4 py-2 rounded-lg transition-colors"
               >
                 <Printer size={15} />
@@ -179,7 +289,9 @@ export default function OsvReportPage() {
               </button>
               <button
                 type="button"
-                className="flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors"
+                disabled={rows.length === 0 || loading}
+                onClick={() => exportToCsv(rows, totals, dateFrom, dateTo)}
+                className="flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 rounded-lg transition-colors"
               >
                 <Download size={15} />
                 Экспорт
@@ -196,11 +308,11 @@ export default function OsvReportPage() {
               <label className="text-xs font-medium text-gray-600">Период</label>
               <select
                 value={period}
-                onChange={(e) => setPeriod(e.target.value)}
+                onChange={(e) => handlePeriodChange(e.target.value)}
                 className={inputCls}
               >
                 {PERIODS.map((p) => (
-                  <option key={p} value={p}>{p}</option>
+                  <option key={p.label} value={p.label}>{p.label}</option>
                 ))}
               </select>
             </div>
@@ -229,7 +341,13 @@ export default function OsvReportPage() {
         </div>
 
         {/* ── report table ────────────────────────────────────────────── */}
-        <OsvTable />
+        <OsvTable
+          rows={rows}
+          totals={totals}
+          loading={loading}
+          error={error}
+          onRetry={() => load(dateFrom, dateTo)}
+        />
 
         {/* ── bottom note ─────────────────────────────────────────────── */}
         <div className="flex gap-2.5 bg-blue-50 border border-blue-100 rounded-lg px-4 py-3">

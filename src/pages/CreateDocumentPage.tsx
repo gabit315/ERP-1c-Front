@@ -1,19 +1,38 @@
-import { useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { Sparkles, Upload, ArrowDownToLine, ArrowUpFromLine, Truck, Info, X } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
+import { getCounterparties, type Counterparty } from '../api/counterparties'
+import { getFinancialItems, type FinancialItem } from '../api/financialItems'
+import { createDocument, analyzeDocument } from '../api/documents'
 
 // ─── types ───────────────────────────────────────────────────────────────────
 
 type DocType = 'income' | 'expense' | 'payment'
 
-// ─── shared input class (matches the rest of the design system) ───────────────
+interface ValidationErrors {
+  date?: string
+  amount?: string
+  counterparty?: string
+  item?: string
+  purpose?: string
+}
+
+// ─── input classes ────────────────────────────────────────────────────────────
 
 const inputCls =
   'w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-700 ' +
   'placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-300 focus:border-blue-300 transition-colors'
 
+const inputErrCls =
+  'w-full px-3 py-2.5 text-sm border border-red-300 rounded-lg bg-gray-50 text-gray-700 ' +
+  'placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-red-300 focus:border-red-300 transition-colors'
+
 const moneyCls =
   inputCls +
+  ' [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
+
+const moneyErrCls =
+  inputErrCls +
   ' [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
 
 // ─── static configuration per document type ──────────────────────────────────
@@ -24,7 +43,6 @@ const TYPE_CFG = {
     Icon: ArrowDownToLine,
     dateLabel: 'Дата поступления',
     selectLabel: 'Контрагент',
-    selectOptions: ['Родители учеников', 'Другой контрагент'],
     purposeLabel: 'Назначение платежа',
     card: {
       active: 'border-green-500 bg-green-50',
@@ -44,7 +62,6 @@ const TYPE_CFG = {
     Icon: ArrowUpFromLine,
     dateLabel: 'Дата списания',
     selectLabel: 'Статья расхода',
-    selectOptions: ['Коммунальные услуги', 'Канцелярские товары', 'Ремонт и обслуживание'],
     purposeLabel: 'Назначение',
     card: {
       active: 'border-red-500 bg-red-50',
@@ -55,8 +72,6 @@ const TYPE_CFG = {
       wrap: 'bg-red-50 border border-red-200',
       title: 'text-red-700',
       body: 'text-red-800',
-      debit: '7310 (Расход по выбранной статье)',
-      credit: '1030 (Денежные средства на счетах)',
     },
   },
   payment: {
@@ -64,11 +79,6 @@ const TYPE_CFG = {
     Icon: Truck,
     dateLabel: 'Дата оплаты',
     selectLabel: 'Поставщик',
-    selectOptions: [
-      'ТОО "Строительная компания"',
-      'ИП Иванов И.И.',
-      'ТОО "Канцелярские товары"',
-    ],
     purposeLabel: 'Назначение платежа',
     card: {
       active: 'border-orange-500 bg-orange-50',
@@ -88,22 +98,229 @@ const TYPE_CFG = {
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 export default function CreateDocumentPage() {
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // form state
   const [showUpload, setShowUpload] = useState(false)
-  const [docType, setDocType]       = useState<DocType>('income')
-  const [date, setDate]             = useState('')
-  const [amount, setAmount]         = useState('')
-  const [selectVal, setSelectVal]   = useState('')
-  const [purpose, setPurpose]       = useState('')
+  const [docType, setDocType]             = useState<DocType>('income')
+  const [date, setDate]                   = useState('')
+  const [amount, setAmount]               = useState('')
+  const [counterpartyId, setCounterpartyId] = useState('')
+  const [itemId, setItemId]               = useState('')   // expense mode
+  const [purpose, setPurpose]             = useState('')
+
+  // counterparties (income / payment)
+  const [counterparties, setCounterparties] = useState<Counterparty[]>([])
+  const [cpLoading, setCpLoading]   = useState(true)
+  const [cpError, setCpError]       = useState<string | null>(null)
+
+  // expense items
+  const [expenseItems, setExpenseItems]     = useState<FinancialItem[]>([])
+  const [expLoading, setExpLoading]         = useState(false)
+  const [expError, setExpError]             = useState<string | null>(null)
+  const [expLoaded, setExpLoaded]           = useState(false)  // lazy-load guard
+
+  // submit
+  const [submitting, setSubmitting]     = useState(false)
+  const [submitError, setSubmitError]   = useState<string | null>(null)
+  const [submitSuccess, setSubmitSuccess] = useState(false)
+
+  // AI analyze
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError]     = useState<string | null>(null)
+
+  // validation
+  const [errors, setErrors] = useState<ValidationErrors>({})
 
   const cfg = TYPE_CFG[docType]
 
-  const handleTypeChange = (t: DocType) => {
-    setDocType(t)
+  // ─── selected expense item (for auto-entry hint) ──────────────────────────
+
+  const selectedExpenseItem = expenseItems.find((i) => String(i.id) === itemId) ?? null
+
+  const expenseDebit = selectedExpenseItem?.defaultAccountCode
+    ? `${selectedExpenseItem.defaultAccountCode} (${selectedExpenseItem.name})`
+    : selectedExpenseItem
+    ? selectedExpenseItem.name
+    : '— (Выберите статью расхода)'
+
+  // ─── load counterparties ──────────────────────────────────────────────────
+
+  const loadCounterparties = () => {
+    setCpLoading(true)
+    setCpError(null)
+    getCounterparties()
+      .then(setCounterparties)
+      .catch((e: unknown) => {
+        setCpError(e instanceof Error ? e.message : 'Ошибка загрузки контрагентов')
+      })
+      .finally(() => setCpLoading(false))
+  }
+
+  useEffect(() => {
+    loadCounterparties()
+  }, [])
+
+  // ─── load expense items (lazy — on first switch to expense) ──────────────
+
+  const loadExpenseItems = () => {
+    setExpLoading(true)
+    setExpError(null)
+    getFinancialItems()
+      .then((items) => {
+        setExpenseItems(items.filter((i) => i.itemType === 'expense'))
+        setExpLoaded(true)
+      })
+      .catch((e: unknown) => {
+        setExpError(e instanceof Error ? e.message : 'Ошибка загрузки статей расходов')
+      })
+      .finally(() => setExpLoading(false))
+  }
+
+  useEffect(() => {
+    if (docType === 'expense' && !expLoaded) {
+      loadExpenseItems()
+    }
+  }, [docType, expLoaded])
+
+  // ─── helpers ─────────────────────────────────────────────────────────────
+
+  const resetForm = () => {
     setDate('')
     setAmount('')
-    setSelectVal('')
+    setCounterpartyId('')
+    setItemId('')
     setPurpose('')
+    setErrors({})
+    setSubmitError(null)
+    setAiError(null)
   }
+
+  const handleTypeChange = (t: DocType) => {
+    setDocType(t)
+    resetForm()
+    setSubmitSuccess(false)
+  }
+
+  // ─── AI file analyze ──────────────────────────────────────────────────────
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+
+    setAiLoading(true)
+    setAiError(null)
+
+    analyzeDocument(file)
+      .then((result) => {
+        if (result.document_type && Object.keys(TYPE_CFG).includes(result.document_type)) {
+          setDocType(result.document_type)
+        }
+        if (result.document_date) setDate(result.document_date.slice(0, 10))
+        if (result.amount && result.amount > 0) setAmount(String(result.amount))
+        if (result.purpose) setPurpose(result.purpose)
+
+        const resolvedType = result.document_type ?? docType
+        if (resolvedType === 'expense') {
+          // match expense item
+          if (result.item_id) {
+            const found = expenseItems.find((i) => i.id === result.item_id)
+            if (found) setItemId(String(found.id))
+          }
+        } else {
+          // match counterparty; for payment — search only among suppliers
+          const pool =
+            resolvedType === 'payment'
+              ? counterparties.filter((c) => c.type === 'supplier')
+              : counterparties
+          if (result.counterparty_id) {
+            const found = pool.find((c) => c.id === result.counterparty_id)
+            if (found) setCounterpartyId(String(found.id))
+          } else if (result.counterparty_name) {
+            const match = pool.find((c) =>
+              c.name.toLowerCase().includes(result.counterparty_name!.toLowerCase())
+            )
+            if (match) setCounterpartyId(String(match.id))
+          }
+        }
+        setShowUpload(false)
+      })
+      .catch((e: unknown) => {
+        setAiError(e instanceof Error ? e.message : 'Ошибка AI-анализа файла')
+      })
+      .finally(() => setAiLoading(false))
+  }
+
+  // ─── validation ───────────────────────────────────────────────────────────
+
+  const validate = (): ValidationErrors => {
+    const errs: ValidationErrors = {}
+    if (!date) errs.date = 'Укажите дату документа'
+    if (!amount || Number(amount) <= 0) errs.amount = 'Сумма должна быть больше 0'
+    if (docType === 'expense') {
+      if (!itemId) errs.item = 'Выберите статью расхода'
+    } else {
+      if (!counterpartyId)
+        errs.counterparty = docType === 'payment' ? 'Выберите поставщика' : 'Выберите контрагента'
+      if (!purpose.trim()) errs.purpose = 'Укажите назначение'
+    }
+    return errs
+  }
+
+  // ─── submit ───────────────────────────────────────────────────────────────
+
+  const handleSubmit = () => {
+    const errs = validate()
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs)
+      return
+    }
+    setErrors({})
+    setSubmitting(true)
+    setSubmitError(null)
+    setSubmitSuccess(false)
+
+    const payload =
+      docType === 'expense'
+        ? {
+            document_type: 'expense' as const,
+            document_date: date,
+            amount: Number(amount),
+            item_id: Number(itemId),
+            purpose: purpose.trim() || undefined,
+          }
+        : {
+            document_type: docType,
+            document_date: date,
+            amount: Number(amount),
+            counterparty_id: Number(counterpartyId),
+            purpose: purpose.trim(),
+          }
+
+    createDocument(payload)
+      .then(() => {
+        setSubmitSuccess(true)
+        resetForm()
+      })
+      .catch((e: unknown) => {
+        setSubmitError(e instanceof Error ? e.message : 'Ошибка создания документа')
+      })
+      .finally(() => setSubmitting(false))
+  }
+
+  // ─── derived flags & lists ───────────────────────────────────────────────
+
+  const selectLoading = docType === 'expense' ? expLoading : cpLoading
+  const selectError   = docType === 'expense' ? expError   : cpError
+
+  // payment mode shows only suppliers; income mode shows all counterparties
+  const selectableCounterparties =
+    docType === 'payment'
+      ? counterparties.filter((c) => c.type === 'supplier')
+      : counterparties
+
+  // ─── render ───────────────────────────────────────────────────────────────
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -114,6 +331,33 @@ export default function CreateDocumentPage() {
           subtitle="Быстрое создание кассовых и финансовых документов"
         />
 
+        {/* Success banner */}
+        {submitSuccess && (
+          <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-700 font-medium">
+            Документ успешно создан.
+          </div>
+        )}
+
+        {/* Submit error */}
+        {submitError && (
+          <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-600">
+            {submitError}
+          </div>
+        )}
+
+        {/* Counterparties / items load error */}
+        {selectError && (
+          <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 flex items-center justify-between">
+            <span className="text-sm text-red-600">{selectError}</span>
+            <button
+              onClick={docType === 'expense' ? loadExpenseItems : loadCounterparties}
+              className="text-sm font-medium text-red-600 hover:text-red-700 underline ml-4 shrink-0"
+            >
+              Повторить
+            </button>
+          </div>
+        )}
+
         {/* ── main card ─────────────────────────────────────────────────── */}
         <div className="bg-white border border-gray-200 rounded-lg p-6 flex flex-col gap-6">
 
@@ -121,12 +365,13 @@ export default function CreateDocumentPage() {
           <div className="flex flex-col gap-3">
             <button
               type="button"
+              disabled={aiLoading}
               onClick={() => setShowUpload((v) => !v)}
-              className="self-start flex items-center gap-2 text-sm font-medium text-white px-4 py-2.5 rounded-lg transition-opacity hover:opacity-90"
+              className="self-start flex items-center gap-2 text-sm font-medium text-white px-4 py-2.5 rounded-lg transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #2563eb 100%)' }}
             >
               <Sparkles size={15} />
-              Загрузить документ с AI обработкой
+              {aiLoading ? 'Анализирую...' : 'Загрузить документ с AI обработкой'}
             </button>
 
             {showUpload && (
@@ -159,8 +404,18 @@ export default function CreateDocumentPage() {
                       Поддерживаются: PDF, JPG, PNG (макс. 10 МБ)
                     </p>
                   </div>
-                  <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" />
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
                 </label>
+
+                {aiError && (
+                  <p className="text-xs text-red-500">{aiError}</p>
+                )}
               </div>
             )}
           </div>
@@ -215,9 +470,10 @@ export default function CreateDocumentPage() {
                 <input
                   type="date"
                   value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className={inputCls}
+                  onChange={(e) => { setDate(e.target.value); setErrors((p) => ({ ...p, date: undefined })) }}
+                  className={errors.date ? inputErrCls : inputCls}
                 />
+                {errors.date && <span className="text-xs text-red-500">{errors.date}</span>}
               </div>
               <div className="flex-1 flex flex-col gap-1.5">
                 <label className="text-xs font-medium text-gray-600">Сумма (₸)</label>
@@ -226,28 +482,50 @@ export default function CreateDocumentPage() {
                   min="0"
                   step="0.01"
                   value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
+                  onChange={(e) => { setAmount(e.target.value); setErrors((p) => ({ ...p, amount: undefined })) }}
                   placeholder="0.00"
-                  className={moneyCls}
+                  className={errors.amount ? moneyErrCls : moneyCls}
                 />
+                {errors.amount && <span className="text-xs text-red-500">{errors.amount}</span>}
               </div>
             </div>
 
-            {/* dynamic select */}
+            {/* dynamic select: expense items OR counterparties */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-gray-600">{cfg.selectLabel}</label>
-              <select
-                value={selectVal}
-                onChange={(e) => setSelectVal(e.target.value)}
-                className={inputCls}
-              >
-                <option value="">Выберите...</option>
-                {cfg.selectOptions.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
+              {selectLoading ? (
+                <div className={inputCls + ' text-gray-400'}>
+                  {docType === 'expense' ? 'Загрузка статей расходов...' : 'Загрузка контрагентов...'}
+                </div>
+              ) : docType === 'expense' ? (
+                <select
+                  value={itemId}
+                  onChange={(e) => { setItemId(e.target.value); setErrors((p) => ({ ...p, item: undefined })) }}
+                  className={errors.item ? inputErrCls : inputCls}
+                >
+                  <option value="">Выберите статью...</option>
+                  {expenseItems.map((item) => (
+                    <option key={item.id} value={String(item.id)}>
+                      {item.name}{item.category !== '—' ? ` — ${item.category}` : ''}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <select
+                  value={counterpartyId}
+                  onChange={(e) => { setCounterpartyId(e.target.value); setErrors((p) => ({ ...p, counterparty: undefined })) }}
+                  className={errors.counterparty ? inputErrCls : inputCls}
+                >
+                  <option value="">Выберите...</option>
+                  {selectableCounterparties.map((cp) => (
+                    <option key={cp.id} value={String(cp.id)}>
+                      {cp.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {errors.item && <span className="text-xs text-red-500">{errors.item}</span>}
+              {errors.counterparty && <span className="text-xs text-red-500">{errors.counterparty}</span>}
             </div>
 
             {/* purpose */}
@@ -255,21 +533,36 @@ export default function CreateDocumentPage() {
               <label className="text-xs font-medium text-gray-600">{cfg.purposeLabel}</label>
               <textarea
                 value={purpose}
-                onChange={(e) => setPurpose(e.target.value)}
+                onChange={(e) => { setPurpose(e.target.value); setErrors((p) => ({ ...p, purpose: undefined })) }}
                 rows={3}
                 placeholder="Введите назначение..."
-                className={inputCls + ' resize-none'}
+                className={(errors.purpose ? inputErrCls : inputCls) + ' resize-none'}
               />
+              {errors.purpose && <span className="text-xs text-red-500">{errors.purpose}</span>}
             </div>
 
             {/* auto-entry box — color keyed to doc type */}
-            <div className={`rounded-lg px-4 py-3 flex flex-col gap-1 ${cfg.entry.wrap}`}>
-              <p className={`text-xs font-semibold ${cfg.entry.title}`}>
-                Автоматическая проводка:
-              </p>
-              <p className={`text-xs ${cfg.entry.body}`}>Дебет: {cfg.entry.debit}</p>
-              <p className={`text-xs ${cfg.entry.body}`}>Кредит: {cfg.entry.credit}</p>
-            </div>
+            {docType === 'expense' ? (
+              <div className={`rounded-lg px-4 py-3 flex flex-col gap-1 ${cfg.entry.wrap}`}>
+                <p className={`text-xs font-semibold ${cfg.entry.title}`}>
+                  Автоматическая проводка:
+                </p>
+                <p className={`text-xs ${cfg.entry.body}`}>
+                  Дебет: {expenseDebit}
+                </p>
+                <p className={`text-xs ${cfg.entry.body}`}>
+                  Кредит: 1030 (Денежные средства на счетах)
+                </p>
+              </div>
+            ) : (
+              <div className={`rounded-lg px-4 py-3 flex flex-col gap-1 ${cfg.entry.wrap}`}>
+                <p className={`text-xs font-semibold ${cfg.entry.title}`}>
+                  Автоматическая проводка:
+                </p>
+                <p className={`text-xs ${cfg.entry.body}`}>Дебет: {cfg.entry.debit}</p>
+                <p className={`text-xs ${cfg.entry.body}`}>Кредит: {cfg.entry.credit}</p>
+              </div>
+            )}
 
           </div>
 
@@ -287,15 +580,19 @@ export default function CreateDocumentPage() {
           <div className="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
             <button
               type="button"
-              className="text-sm font-medium text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 px-4 py-2 rounded-lg transition-colors"
+              disabled={submitting}
+              onClick={() => { resetForm(); setSubmitSuccess(false) }}
+              className="text-sm font-medium text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-50 px-4 py-2 rounded-lg transition-colors"
             >
               Отмена
             </button>
             <button
               type="button"
-              className="text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors"
+              disabled={submitting || selectLoading}
+              onClick={handleSubmit}
+              className="text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 rounded-lg transition-colors"
             >
-              Создать документ
+              {submitting ? 'Создание...' : 'Создать документ'}
             </button>
           </div>
 
