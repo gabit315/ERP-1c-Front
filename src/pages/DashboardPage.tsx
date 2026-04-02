@@ -18,8 +18,10 @@ import KPIStatCard from '../components/ui/KPIStatCard'
 import SectionCard from '../components/ui/SectionCard'
 import ActionButtonCard from '../components/ui/ActionButtonCard'
 import RecentOperationList, { type Operation } from '../components/ui/RecentOperationList'
+import CounterpartyModal from '../components/ui/CounterpartyModal'
 import { checkHealth, getDashboard } from '../api/dashboard'
 import type { DashboardData } from '../types/dashboard'
+import type { PageId } from '../components/layout/Sidebar'
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -60,40 +62,48 @@ function plural(n: number): string {
   return 'ов'
 }
 
-// ─── static quick actions ────────────────────────────────────────────────────
+// ─── quick actions ────────────────────────────────────────────────────────────
 
-const quickActions = [
-  {
-    icon: <FilePlus size={18} />,
-    label: 'Создать накладную',
-    description: 'Приходная или расходная',
-  },
-  {
-    icon: <CreditCard size={18} />,
-    label: 'Добавить платёж',
-    description: 'Платёжное поручение',
-  },
-  {
-    icon: <FileBarChart size={18} />,
-    label: 'Сформировать отчёт',
-    description: 'Финансовая отчётность',
-  },
-  {
-    icon: <BookPlus size={18} />,
-    label: 'Новый контрагент',
-    description: 'Добавить в справочник',
-  },
-  {
-    icon: <ReceiptText size={18} />,
-    label: 'Создать акт',
-    description: 'Акт выполненных работ',
-  },
-  {
-    icon: <ArrowDownToLine size={18} />,
-    label: 'Импорт данных',
-    description: 'Загрузить из файла',
-  },
-]
+function buildQuickActions(
+  onNavigate: (page: PageId) => void,
+  onNewCounterparty: () => void,
+) {
+  return [
+    {
+      icon: <FilePlus size={18} />,
+      label: 'Создать накладную',
+      description: 'Приходная или расходная',
+      onClick: () => onNavigate('create-document'),
+    },
+    {
+      icon: <CreditCard size={18} />,
+      label: 'Добавить платёж',
+      description: 'Платёжное поручение',
+      onClick: () => onNavigate('operations'),
+    },
+    {
+      icon: <FileBarChart size={18} />,
+      label: 'Сформировать отчёт',
+      description: 'Финансовая отчётность',
+    },
+    {
+      icon: <BookPlus size={18} />,
+      label: 'Новый контрагент',
+      description: 'Добавить в справочник',
+      onClick: onNewCounterparty,
+    },
+    {
+      icon: <ReceiptText size={18} />,
+      label: 'Создать акт',
+      description: 'Акт выполненных работ',
+    },
+    {
+      icon: <ArrowDownToLine size={18} />,
+      label: 'Импорт данных',
+      description: 'Загрузить из файла',
+    },
+  ]
+}
 
 // ─── skeleton components ─────────────────────────────────────────────────────
 
@@ -148,10 +158,15 @@ function PageShell({ children }: { children: React.ReactNode }) {
 
 type LoadStatus = 'loading' | 'error' | 'success'
 
-export default function DashboardPage() {
+interface DashboardPageProps {
+  onNavigate: (page: PageId) => void
+}
+
+export default function DashboardPage({ onNavigate }: DashboardPageProps) {
   const [status, setStatus] = useState<LoadStatus>('loading')
   const [data, setData] = useState<DashboardData | null>(null)
   const [errorMessage, setErrorMessage] = useState('')
+  const [counterpartyModalOpen, setCounterpartyModalOpen] = useState(false)
 
   const load = useCallback(async () => {
     setStatus('loading')
@@ -184,7 +199,7 @@ export default function DashboardPage() {
           <div className="col-span-2">
             <SectionCard title="Быстрые действия" className="h-full">
               <div className="flex flex-col gap-2">
-                {quickActions.map((action) => (
+                {buildQuickActions(onNavigate, () => setCounterpartyModalOpen(true)).map((action) => (
                   <ActionButtonCard key={action.label} {...action} />
                 ))}
               </div>
@@ -298,7 +313,7 @@ export default function DashboardPage() {
         <div className="col-span-2">
           <SectionCard title="Быстрые действия" className="h-full">
             <div className="flex flex-col gap-2">
-              {quickActions.map((action) => (
+              {buildQuickActions(onNavigate, () => setCounterpartyModalOpen(true)).map((action) => (
                 <ActionButtonCard key={action.label} {...action} />
               ))}
             </div>
@@ -319,6 +334,14 @@ export default function DashboardPage() {
           </SectionCard>
         </div>
       </div>
+
+      {counterpartyModalOpen && (
+        <CounterpartyModal
+          initial={null}
+          onClose={() => setCounterpartyModalOpen(false)}
+          onSaved={() => setCounterpartyModalOpen(false)}
+        />
+      )}
     </PageShell>
   )
 }

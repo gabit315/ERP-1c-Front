@@ -14,7 +14,7 @@ import AccountAnalysisPage from './pages/AccountAnalysisPage'
 import GeneralSummaryPage from './pages/GeneralSummaryPage'
 import AnalyticsPage from './pages/AnalyticsPage'
 
-function renderPage(page: PageId) {
+function renderPage(page: PageId, onNavigate: (p: PageId) => void) {
   switch (page) {
     case 'chart-of-accounts':    return <ChartOfAccountsPage />
     case 'counterparties':       return <CounterpartiesPage />
@@ -27,7 +27,7 @@ function renderPage(page: PageId) {
     case 'account-analysis':     return <AccountAnalysisPage />
     case 'general-summary':      return <GeneralSummaryPage />
     case 'analytics':            return <AnalyticsPage />
-    default:                     return <DashboardPage />
+    default:                     return <DashboardPage onNavigate={onNavigate} />
   }
 }
 
@@ -36,7 +36,7 @@ export default function App() {
 
   return (
     <AppShell activePage={currentPage} onNavigate={setCurrentPage}>
-      {renderPage(currentPage)}
+      {renderPage(currentPage, setCurrentPage)}
     </AppShell>
   )
 }

@@ -4,7 +4,11 @@ import PageHeaderWithAction from '../components/ui/PageHeaderWithAction'
 import SearchCard from '../components/ui/SearchCard'
 import StatusBadge from '../components/ui/StatusBadge'
 import RowActions from '../components/ui/RowActions'
-import { getCounterparties } from '../api/counterparties'
+import CounterpartyModal from '../components/ui/CounterpartyModal'
+import {
+  getCounterparties,
+  deleteCounterparty,
+} from '../api/counterparties'
 import type { Counterparty } from '../api/counterparties'
 
 // ─── table skeleton ───────────────────────────────────────────────────────────
@@ -40,7 +44,15 @@ function TableSkeleton() {
 
 // ─── table ────────────────────────────────────────────────────────────────────
 
-function CounterpartiesTable({ rows }: { rows: Counterparty[] }) {
+function CounterpartiesTable({
+  rows,
+  onEdit,
+  onDelete,
+}: {
+  rows: Counterparty[]
+  onEdit: (c: Counterparty) => void
+  onDelete: (c: Counterparty) => void
+}) {
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
       <table className="w-full text-sm border-collapse">
@@ -85,12 +97,78 @@ function CounterpartiesTable({ rows }: { rows: Counterparty[] }) {
                 {row.contact ?? <span className="text-gray-400">—</span>}
               </td>
               <td className="px-5 py-3.5">
-                <RowActions disabled />
+                <RowActions
+                  onEdit={() => onEdit(row)}
+                  onDelete={() => onDelete(row)}
+                />
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+// ─── delete confirm ───────────────────────────────────────────────────────────
+
+function DeleteConfirm({
+  counterparty,
+  onClose,
+  onDeleted,
+}: {
+  counterparty: Counterparty
+  onClose: () => void
+  onDeleted: () => void
+}) {
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleDelete() {
+    setSubmitting(true)
+    setError('')
+    try {
+      await deleteCounterparty(counterparty.id)
+      onDeleted()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Неизвестная ошибка')
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6 flex flex-col gap-4">
+        <h2 className="text-base font-semibold text-gray-800">Удалить контрагента?</h2>
+        <p className="text-sm text-gray-600">
+          Вы уверены, что хотите удалить{' '}
+          <span className="font-medium text-gray-800">{counterparty.name}</span>?
+          Это действие нельзя отменить.
+        </p>
+
+        {error && (
+          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
+
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            disabled={submitting}
+            className="px-4 py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
+          >
+            Отмена
+          </button>
+          <button
+            onClick={() => void handleDelete()}
+            disabled={submitting}
+            className="px-4 py-2 text-sm text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {submitting ? 'Удаление...' : 'Удалить'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -104,6 +182,11 @@ export default function CounterpartiesPage() {
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
   const [errorMessage, setErrorMessage] = useState('')
   const [query, setQuery] = useState('')
+
+  // modal state
+  const [editTarget, setEditTarget] = useState<Counterparty | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Counterparty | null>(null)
 
   const load = useCallback(async () => {
     setStatus('loading')
@@ -130,6 +213,31 @@ export default function CounterpartiesPage() {
     )
   }, [query, counterparties])
 
+  function openCreate() {
+    setEditTarget(null)
+    setModalOpen(true)
+  }
+
+  function openEdit(c: Counterparty) {
+    setEditTarget(c)
+    setModalOpen(true)
+  }
+
+  function closeModal() {
+    setModalOpen(false)
+    setEditTarget(null)
+  }
+
+  function handleSaved() {
+    closeModal()
+    void load()
+  }
+
+  function handleDeleted() {
+    setDeleteTarget(null)
+    void load()
+  }
+
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="p-6 max-w-screen-xl mx-auto flex flex-col gap-6">
@@ -139,9 +247,8 @@ export default function CounterpartiesPage() {
           subtitle="Управление поставщиками и покупателями"
           action={
             <button
-              disabled
-              className="flex items-center gap-1.5 bg-blue-600 text-white text-sm font-medium px-4 py-2 rounded-lg opacity-50 cursor-not-allowed"
-              title="Функция временно недоступна"
+              onClick={openCreate}
+              className="flex items-center gap-1.5 bg-blue-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
             >
               <Plus size={16} />
               Добавить контрагента
@@ -210,11 +317,32 @@ export default function CounterpartiesPage() {
               </table>
             </div>
           ) : (
-            <CounterpartiesTable rows={filtered} />
+            <CounterpartiesTable
+              rows={filtered}
+              onEdit={openEdit}
+              onDelete={setDeleteTarget}
+            />
           )
         )}
 
       </div>
+
+      {/* modals */}
+      {modalOpen && (
+        <CounterpartyModal
+          initial={editTarget}
+          onClose={closeModal}
+          onSaved={handleSaved}
+        />
+      )}
+
+      {deleteTarget && (
+        <DeleteConfirm
+          counterparty={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onDeleted={handleDeleted}
+        />
+      )}
     </div>
   )
 }
