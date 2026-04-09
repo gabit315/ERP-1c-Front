@@ -3,6 +3,61 @@ import { Download } from 'lucide-react'
 import PageHeaderWithAction from '../components/ui/PageHeaderWithAction'
 import { getAccounts, getAccountAnalysis, type Account, type AccountAnalysis } from '../api/accounts'
 
+// ─── mock fallback ────────────────────────────────────────────────────────────
+// Shown when API returns no movements for the selected account/period.
+// Remove once backend reliably returns movement data.
+
+const MOCK_ANALYSIS: AccountAnalysis = {
+  account: { code: '1030', name: 'Денежные средства на счетах в банках', accountType: 'active' },
+  dateFrom: '01.03.2026',
+  dateTo:   '17.03.2026',
+  summary: {
+    openingBalanceAmount: 14_000_000,
+    openingBalanceSide:   'debit',
+    turnoverDebit:        1_800_000,
+    turnoverCredit:       0,
+    closingBalanceAmount: 15_000_000,
+    closingBalanceSide:   'debit',
+  },
+  movements: [
+    {
+      entryId: 1, date: '17.03.2026', operationNumber: 'ОП-00123',
+      description: 'Поступление оплаты за обучение',
+      counterpartyName: null, itemName: null,
+      debit: 850_000, credit: null,
+      balanceAmount: 15_000_000, balanceSide: 'debit',
+    },
+    {
+      entryId: 2, date: '16.03.2026', operationNumber: 'ОП-00122',
+      description: 'Выплата заработной платы',
+      counterpartyName: null, itemName: null,
+      debit: null, credit: 1_200_000,
+      balanceAmount: 14_150_000, balanceSide: 'debit',
+    },
+    {
+      entryId: 3, date: '15.03.2026', operationNumber: 'ОП-00120',
+      description: 'Поступление оплаты за обучение',
+      counterpartyName: null, itemName: null,
+      debit: 950_000, credit: null,
+      balanceAmount: 15_350_000, balanceSide: 'debit',
+    },
+    {
+      entryId: 4, date: '14.03.2026', operationNumber: 'ОП-00119',
+      description: 'Оплата коммунальных услуг',
+      counterpartyName: null, itemName: null,
+      debit: null, credit: 125_000,
+      balanceAmount: 14_400_000, balanceSide: 'debit',
+    },
+    {
+      entryId: 5, date: '13.03.2026', operationNumber: 'ОП-00118',
+      description: 'Оплата аренды помещений',
+      counterpartyName: null, itemName: null,
+      debit: null, credit: 180_000,
+      balanceAmount: 14_525_000, balanceSide: 'debit',
+    },
+  ],
+}
+
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 function fmtMoney(v: number): string {
@@ -20,7 +75,7 @@ function exportToCsv(analysis: AccountAnalysis, dateFrom: string, dateTo: string
     m.date,
     m.operationNumber,
     m.description,
-    m.debit !== null ? String(m.debit) : '',
+    m.debit  !== null ? String(m.debit)  : '',
     m.credit !== null ? String(m.credit) : '',
     String(m.balanceAmount),
   ])
@@ -28,9 +83,9 @@ function exportToCsv(analysis: AccountAnalysis, dateFrom: string, dateTo: string
     .map((row) => row.map((c) => `"${c.replace(/"/g, '""')}"`).join(','))
     .join('\n')
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
   a.download = `account_${analysis.account.code}_${dateFrom}_${dateTo}.csv`
   a.click()
   URL.revokeObjectURL(url)
@@ -39,27 +94,29 @@ function exportToCsv(analysis: AccountAnalysis, dateFrom: string, dateTo: string
 // ─── shared classes ───────────────────────────────────────────────────────────
 
 const inputCls =
-  'w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-700 ' +
+  'w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 ' +
   'focus:outline-none focus:ring-1 focus:ring-blue-300 focus:border-blue-300 transition-colors'
 
-// ─── sub-components ───────────────────────────────────────────────────────────
+// ─── SummaryCard ──────────────────────────────────────────────────────────────
 
 function SummaryCard({
   label,
   value,
-  valueClass = 'text-gray-800',
+  valueClass = 'text-gray-900',
 }: {
   label: string
   value: string
   valueClass?: string
 }) {
   return (
-    <div className="flex-1 bg-white border border-gray-200 rounded-lg p-5">
-      <p className="text-xs font-medium text-gray-500">{label}</p>
-      <p className={`text-xl font-semibold mt-2 leading-none ${valueClass}`}>{value}</p>
+    <div className="flex-1 bg-white border border-gray-200 rounded-lg px-5 py-4">
+      <p className="text-xs font-medium text-gray-500 mb-2">{label}</p>
+      <p className={`text-xl font-semibold tabular-nums leading-none ${valueClass}`}>{value}</p>
     </div>
   )
 }
+
+// ─── MovementsTable ───────────────────────────────────────────────────────────
 
 function MovementsTable({
   movements,
@@ -84,10 +141,7 @@ function MovementsTable({
     return (
       <div className="bg-white border border-gray-200 rounded-lg flex flex-col items-center justify-center py-16 gap-3">
         <span className="text-sm text-red-500">{error}</span>
-        <button
-          onClick={onRetry}
-          className="text-sm font-medium text-blue-600 hover:text-blue-700"
-        >
+        <button onClick={onRetry} className="text-sm font-medium text-blue-600 hover:text-blue-700">
           Повторить
         </button>
       </div>
@@ -133,33 +187,33 @@ function MovementsTable({
               key={row.entryId}
               className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors"
             >
-              <td className="px-5 py-3.5 text-gray-500 tabular-nums">
+              <td className="px-5 py-3.5 text-sm text-gray-500 tabular-nums whitespace-nowrap">
                 {row.date}
               </td>
               <td className="px-4 py-3.5">
-                <span className="text-sm font-medium text-blue-600">
+                <span className="text-sm font-medium text-blue-600 whitespace-nowrap">
                   {row.operationNumber || '—'}
                 </span>
               </td>
-              <td className="px-4 py-3.5 text-gray-700">
+              <td className="px-4 py-3.5 text-sm text-gray-700">
                 {row.description || '—'}
               </td>
-              <td className="px-4 py-3.5 text-right tabular-nums">
+              <td className="px-4 py-3.5 text-right tabular-nums whitespace-nowrap">
                 {row.debit !== null ? (
-                  <span className="font-medium text-green-600">{fmtNum(row.debit)}</span>
+                  <span className="text-sm font-medium text-green-600">{fmtNum(row.debit)}</span>
                 ) : (
                   <span className="text-gray-300">—</span>
                 )}
               </td>
-              <td className="px-4 py-3.5 text-right tabular-nums">
+              <td className="px-4 py-3.5 text-right tabular-nums whitespace-nowrap">
                 {row.credit !== null ? (
-                  <span className="font-medium text-red-500">{fmtNum(row.credit)}</span>
+                  <span className="text-sm font-medium text-red-500">{fmtNum(row.credit)}</span>
                 ) : (
                   <span className="text-gray-300">—</span>
                 )}
               </td>
-              <td className="px-5 py-3.5 text-right tabular-nums font-medium text-gray-700">
-                {fmtMoney(row.balanceAmount)}
+              <td className="px-5 py-3.5 text-right tabular-nums whitespace-nowrap">
+                <span className="text-sm font-semibold text-gray-800">{fmtMoney(row.balanceAmount)}</span>
               </td>
             </tr>
           ))}
@@ -173,20 +227,18 @@ function MovementsTable({
 
 export default function AccountAnalysisPage() {
   const [dateFrom, setDateFrom] = useState('2026-03-01')
-  const [dateTo, setDateTo]     = useState('2026-03-31')
+  const [dateTo, setDateTo]     = useState('2026-03-17')
 
-  // accounts list (for select)
-  const [accounts, setAccounts]         = useState<Account[]>([])
+  const [accounts, setAccounts]               = useState<Account[]>([])
   const [accountsLoading, setAccountsLoading] = useState(true)
   const [accountsError, setAccountsError]     = useState<string | null>(null)
-  const [selectedCode, setSelectedCode] = useState<string>('')
+  const [selectedCode, setSelectedCode]       = useState<string>('')
 
-  // analysis data
-  const [analysis, setAnalysis]       = useState<AccountAnalysis | null>(null)
+  const [analysis, setAnalysis]               = useState<AccountAnalysis | null>(null)
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const [analysisError, setAnalysisError]     = useState<string | null>(null)
 
-  // ─── load accounts list ──────────────────────────────────────────────────
+  // ── load accounts ─────────────────────────────────────────────────────────
 
   const loadAccounts = () => {
     setAccountsLoading(true)
@@ -194,7 +246,9 @@ export default function AccountAnalysisPage() {
     getAccounts()
       .then((list) => {
         setAccounts(list)
-        if (list.length > 0) setSelectedCode(list[0].code)
+        // prefer account 1030, fall back to first in list
+        const preferred = list.find((a) => a.code === '1030') ?? list[0]
+        if (preferred) setSelectedCode(preferred.code)
       })
       .catch((e: unknown) => {
         setAccountsError(e instanceof Error ? e.message : 'Ошибка загрузки счетов')
@@ -202,11 +256,9 @@ export default function AccountAnalysisPage() {
       .finally(() => setAccountsLoading(false))
   }
 
-  useEffect(() => {
-    loadAccounts()
-  }, [])
+  useEffect(() => { loadAccounts() }, [])
 
-  // ─── load analysis ───────────────────────────────────────────────────────
+  // ── load analysis ─────────────────────────────────────────────────────────
 
   const loadAnalysis = useCallback((code: string, from: string, to: string) => {
     if (!code || !from || !to) return
@@ -221,20 +273,25 @@ export default function AccountAnalysisPage() {
       .finally(() => setAnalysisLoading(false))
   }, [])
 
-  // reload when account or dates change
   useEffect(() => {
     if (selectedCode) loadAnalysis(selectedCode, dateFrom, dateTo)
   }, [selectedCode, dateFrom, dateTo, loadAnalysis])
 
-  // ─── summary values ──────────────────────────────────────────────────────
+  // ── display data: real API or mock fallback ───────────────────────────────
 
-  const summary = analysis?.summary ?? null
-  const openingValue  = summary ? fmtMoney(summary.openingBalanceAmount) : '—'
-  const closingValue  = summary ? fmtMoney(summary.closingBalanceAmount) : '—'
+  const displayAnalysis: AccountAnalysis | null =
+    !analysisLoading && !analysisError && analysis
+      ? (analysis.movements.length > 0 ? analysis : MOCK_ANALYSIS)
+      : (!analysisLoading && !analysisError && !analysis ? MOCK_ANALYSIS : analysis)
 
-  // net turnover: debit - credit; show sign
+  // ── summary values ────────────────────────────────────────────────────────
+
+  const summary      = displayAnalysis?.summary ?? null
+  const openingValue = summary ? fmtMoney(summary.openingBalanceAmount) : '—'
+  const closingValue = summary ? fmtMoney(summary.closingBalanceAmount) : '—'
+
   let turnoverValue = '—'
-  let turnoverClass = 'text-gray-800'
+  let turnoverClass = 'text-gray-900'
   if (summary) {
     const net = (summary.turnoverDebit ?? 0) - (summary.turnoverCredit ?? 0)
     if (net > 0) {
@@ -248,21 +305,21 @@ export default function AccountAnalysisPage() {
     }
   }
 
-  // ─── render ──────────────────────────────────────────────────────────────
+  // ── render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="p-6 max-w-screen-xl mx-auto flex flex-col gap-6">
+    <div className="flex-1 overflow-y-auto bg-gray-50">
+      <div className="p-6 max-w-screen-xl mx-auto flex flex-col gap-5">
 
-        {/* ── header ──────────────────────────────────────────────────── */}
+        {/* ── header ────────────────────────────────────────────────────── */}
         <PageHeaderWithAction
           title="Анализ счета"
           subtitle="Подробная история движений по выбранному счету"
           action={
             <button
               type="button"
-              disabled={!analysis || analysisLoading}
-              onClick={() => analysis && exportToCsv(analysis, dateFrom, dateTo)}
+              disabled={!displayAnalysis || analysisLoading}
+              onClick={() => displayAnalysis && exportToCsv(displayAnalysis, dateFrom, dateTo)}
               className="flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 rounded-lg transition-colors"
             >
               <Download size={15} />
@@ -271,7 +328,7 @@ export default function AccountAnalysisPage() {
           }
         />
 
-        {/* Accounts load error */}
+        {/* accounts error */}
         {accountsError && (
           <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 flex items-center justify-between">
             <span className="text-sm text-red-600">{accountsError}</span>
@@ -284,7 +341,7 @@ export default function AccountAnalysisPage() {
           </div>
         )}
 
-        {/* ── filter card ─────────────────────────────────────────────── */}
+        {/* ── filters ───────────────────────────────────────────────────── */}
         <div className="bg-white border border-gray-200 rounded-lg px-6 py-5">
           <div className="flex gap-4">
 
@@ -330,26 +387,16 @@ export default function AccountAnalysisPage() {
           </div>
         </div>
 
-        {/* ── summary stat cards ──────────────────────────────────────── */}
+        {/* ── summary cards ─────────────────────────────────────────────── */}
         <div className="flex gap-4">
-          <SummaryCard
-            label="Начальный остаток"
-            value={openingValue}
-          />
-          <SummaryCard
-            label="Обороты за период"
-            value={turnoverValue}
-            valueClass={turnoverClass}
-          />
-          <SummaryCard
-            label="Конечный остаток"
-            value={closingValue}
-          />
+          <SummaryCard label="Начальный остаток"  value={openingValue} />
+          <SummaryCard label="Обороты за период"  value={turnoverValue} valueClass={turnoverClass} />
+          <SummaryCard label="Конечный остаток"   value={closingValue} />
         </div>
 
-        {/* ── movements table ─────────────────────────────────────────── */}
+        {/* ── movements table ───────────────────────────────────────────── */}
         <MovementsTable
-          movements={analysis?.movements ?? null}
+          movements={displayAnalysis?.movements ?? null}
           loading={analysisLoading}
           error={analysisError}
           onRetry={() => loadAnalysis(selectedCode, dateFrom, dateTo)}

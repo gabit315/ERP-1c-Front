@@ -21,6 +21,7 @@ export type PageId =
   | 'counterparties'
   | 'employees'
   | 'expense-income-items'
+  | 'operation-templates'
   | 'create-document'
   | 'incoming-invoices'
   | 'outgoing-invoices'
@@ -68,9 +69,10 @@ const navGroups: NavGroup[] = [
     icon: <Users size={17} />,
     label: 'Справочники',
     children: [
-      { label: 'Контрагенты',              pageId: 'counterparties'      },
-      { label: 'Сотрудники',               pageId: 'employees'           },
-      { label: 'Статьи расходов/доходов',  pageId: 'expense-income-items'},
+      { label: 'Контрагенты',              pageId: 'counterparties'       },
+      { label: 'Сотрудники',               pageId: 'employees'            },
+      { label: 'Статьи расходов/доходов',  pageId: 'expense-income-items' },
+      { label: 'Шаблоны операций',         pageId: 'operation-templates'  },
     ],
   },
   {
@@ -79,12 +81,12 @@ const navGroups: NavGroup[] = [
     label: 'Операции',
     pageId: 'operations',
   },
-  {
-    id: 'docs',
-    icon: <FileText size={17} />,
-    label: 'Документы',
-    pageId: 'create-document',
-  },
+  // {
+  //   id: 'docs',
+  //   icon: <FileText size={17} />,
+  //   label: 'Документы',
+  //   pageId: 'create-document',
+  // },
   {
     id: 'journal',
     icon: <ScrollText size={17} />,

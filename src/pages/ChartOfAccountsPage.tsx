@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
-import { Search, ChevronRight, X, RefreshCw, ServerCrash, Loader2, Inbox } from 'lucide-react'
+import { Search, ChevronRight, X, RefreshCw, ServerCrash, Loader2, Inbox, Info } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
 import StatusBadge from '../components/ui/StatusBadge'
 import { getAccounts, getAccountAnalysis } from '../api/accounts'
@@ -199,8 +199,8 @@ function TableSkeleton() {
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr className="border-b border-gray-200 bg-gray-50">
-            {['w-32', '', 'w-36', 'w-44', 'w-36'].map((w, i) => (
-              <th key={i} className={`px-5 py-3 ${w}`}>
+            {Array.from({ length: 7 }).map((_, i) => (
+              <th key={i} className="px-4 py-3">
                 <div className="h-3 bg-gray-200 rounded w-16" />
               </th>
             ))}
@@ -213,13 +213,24 @@ function TableSkeleton() {
               <td className="px-4 py-3.5"><div className="h-3.5 bg-gray-200 rounded w-64" /></td>
               <td className="px-4 py-3.5"><div className="h-5 bg-gray-100 rounded-full w-20" /></td>
               <td className="px-4 py-3.5"><div className="h-3.5 bg-gray-100 rounded w-24 ml-auto" /></td>
-              <td className="px-5 py-3.5"><div className="h-3.5 bg-gray-100 rounded w-20" /></td>
+              <td className="px-4 py-3.5"><div className="h-3.5 bg-gray-100 rounded w-24 ml-auto" /></td>
+              <td className="px-4 py-3.5"><div className="h-5 bg-gray-100 rounded-full w-16" /></td>
+              <td className="px-5 py-3.5"><div className="h-3.5 bg-gray-100 rounded w-16" /></td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
   )
+}
+
+// ─── type badge helper ────────────────────────────────────────────────────────
+
+function accountTypeBadge(type: Account['accountType']) {
+  if (type === 'active')         return { label: 'Активный',    variant: 'active'          } as const
+  if (type === 'passive')        return { label: 'Пассивный',   variant: 'passive'         } as const
+  if (type === 'active-passive') return { label: 'Акт.-пасс.', variant: 'active-passive'  } as const
+  return                                { label: type,           variant: 'neutral'         } as const
 }
 
 // ─── accounts table ───────────────────────────────────────────────────────────
@@ -244,10 +255,16 @@ function AccountsTable({ rows, onDetails }: AccountsTableProps) {
             <th className="text-left text-xs font-semibold text-gray-400 tracking-wider uppercase px-4 py-3 w-36">
               Тип
             </th>
-            <th className="text-right text-xs font-semibold text-gray-400 tracking-wider uppercase px-4 py-3 w-48">
-              Остаток
+            <th className="text-right text-xs font-semibold text-gray-400 tracking-wider uppercase px-4 py-3 w-44">
+              Нач. сальдо
             </th>
-            <th className="text-left text-xs font-semibold text-gray-400 tracking-wider uppercase px-5 py-3 w-36">
+            <th className="text-right text-xs font-semibold text-gray-400 tracking-wider uppercase px-4 py-3 w-44">
+              Тек. остаток
+            </th>
+            <th className="text-left text-xs font-semibold text-gray-400 tracking-wider uppercase px-4 py-3 w-32">
+              Использование
+            </th>
+            <th className="text-left text-xs font-semibold text-gray-400 tracking-wider uppercase px-5 py-3 w-32">
               Действия
             </th>
           </tr>
@@ -255,55 +272,70 @@ function AccountsTable({ rows, onDetails }: AccountsTableProps) {
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={5} className="text-center text-sm text-gray-400 py-12">
-                Ничего не найдено
+              <td colSpan={7} className="py-12">
+                <div className="flex flex-col items-center justify-center gap-2 text-center">
+                  <Inbox size={24} className="text-gray-300" />
+                  <p className="text-sm text-gray-400">Ничего не найдено</p>
+                </div>
               </td>
             </tr>
           ) : (
-            rows.map((account) => (
-              <tr
-                key={account.code}
-                className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors"
-              >
-                <td className="px-5 py-3.5">
-                  <span className="font-mono text-sm font-medium text-gray-700">
-                    {account.code}
-                  </span>
-                </td>
-                <td className="px-4 py-3.5 text-gray-700">
-                  {account.name}
-                </td>
-                <td className="px-4 py-3.5">
-                  <StatusBadge
-                    label={account.accountType === 'active' ? 'Активный' : 'Пассивный'}
-                    variant={account.accountType === 'active' ? 'active' : 'passive'}
-                  />
-                </td>
-                <td className="px-4 py-3.5 text-right tabular-nums">
-                  {account.balanceAmount != null ? (
-                    <span className="font-medium text-gray-700">
-                      {fmt(account.balanceAmount)}
-                      {account.balanceSide && (
-                        <span className="text-xs text-gray-400 ml-1.5">
-                          {sideLabel(account.balanceSide)}
-                        </span>
-                      )}
+            rows.map((account) => {
+              const badge = accountTypeBadge(account.accountType)
+              return (
+                <tr
+                  key={account.code}
+                  className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors"
+                >
+                  <td className="px-5 py-3.5">
+                    <span className="font-mono text-sm font-medium text-gray-700">
+                      {account.code}
                     </span>
-                  ) : (
-                    <span className="text-gray-400">—</span>
-                  )}
-                </td>
-                <td className="px-5 py-3.5">
-                  <button
-                    onClick={() => onDetails(account)}
-                    className="flex items-center gap-0.5 text-blue-600 hover:text-blue-700 text-sm transition-colors"
-                  >
-                    Подробнее
-                    <ChevronRight size={14} />
-                  </button>
-                </td>
-              </tr>
-            ))
+                  </td>
+                  <td className="px-4 py-3.5 text-gray-700">
+                    {account.name}
+                  </td>
+                  <td className="px-4 py-3.5">
+                    <StatusBadge label={badge.label} variant={badge.variant} />
+                  </td>
+                  {/* Начальное сальдо — данных нет в текущем эндпоинте, точка расширения */}
+                  <td className="px-4 py-3.5 text-right tabular-nums text-gray-400">
+                    —
+                  </td>
+                  {/* Текущий остаток */}
+                  <td className="px-4 py-3.5 text-right tabular-nums">
+                    {account.balanceAmount != null ? (
+                      <span className="font-medium text-gray-700">
+                        {fmt(account.balanceAmount)}
+                        {account.balanceSide && (
+                          <span className="text-xs text-gray-400 ml-1.5">
+                            {sideLabel(account.balanceSide)}
+                          </span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
+                  {/* Использование */}
+                  <td className="px-4 py-3.5">
+                    <StatusBadge
+                      label={account.isActive ? 'Активен' : 'Неактивен'}
+                      variant={account.isActive ? 'active' : 'neutral'}
+                    />
+                  </td>
+                  <td className="px-5 py-3.5">
+                    <button
+                      onClick={() => onDetails(account)}
+                      className="flex items-center gap-0.5 text-blue-600 hover:text-blue-700 text-sm transition-colors"
+                    >
+                      Подробнее
+                      <ChevronRight size={14} />
+                    </button>
+                  </td>
+                </tr>
+              )
+            })
           )}
         </tbody>
       </table>
@@ -352,6 +384,46 @@ export default function ChartOfAccountsPage() {
           title="План счетов"
           subtitle="Предзагруженный план счетов Республики Казахстан"
         />
+
+        {/* Account type reference */}
+        <div className="bg-blue-50 border border-blue-100 rounded-lg px-5 py-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Info size={15} className="text-blue-500 shrink-0" />
+            <p className="text-sm font-semibold text-blue-700">Справка по типам счетов</p>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              {
+                variant: 'active' as const,
+                label: 'Активный',
+                desc: 'Учёт имущества и расходов',
+                range: '1000–5999, 7000–9999',
+              },
+              {
+                variant: 'passive' as const,
+                label: 'Пассивный',
+                desc: 'Учёт обязательств, капитала и доходов',
+                range: '2000–3999, 6000–6999',
+              },
+              {
+                variant: 'active-passive' as const,
+                label: 'Активно-пассивный',
+                desc: 'Могут иметь дебетовое или кредитовое сальдо',
+                range: null,
+              },
+            ].map(({ variant, label, desc, range }) => (
+              <div key={label} className="flex items-start gap-2.5">
+                <StatusBadge label={label} variant={variant} />
+                <div className="min-w-0">
+                  <p className="text-xs text-gray-600">{desc}</p>
+                  {range && (
+                    <p className="text-xs text-gray-400 font-mono mt-0.5">{range}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
 
         {/* Search card */}
         <div className="bg-white border border-gray-200 rounded-lg px-6 py-4">

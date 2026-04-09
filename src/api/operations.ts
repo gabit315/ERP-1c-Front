@@ -7,17 +7,23 @@ interface ApiOperationItem {
   operation_date: string
   number: string
   description: string
+  is_posted?: boolean
+  counterparty_name?: string | null
+  total_amount?: number | null
   entries?: unknown[]
   entries_count?: number
 }
 
 export interface OperationItem {
   id: number
-  date: string      // formatted DD.MM.YYYY, fallback '—'
-  dateRaw: string   // ISO string for period filtering
+  date: string           // formatted DD.MM.YYYY, fallback '—'
+  dateRaw: string        // ISO string for period filtering
   number: string
   description: string
   entriesCount: number
+  isPosted: boolean
+  counterpartyName: string
+  totalAmount: number
 }
 
 function parseDate(d: string): string {
@@ -38,6 +44,9 @@ function mapOperationItem(op: ApiOperationItem): OperationItem {
         : Array.isArray(op.entries)
         ? op.entries.length
         : 0,
+    isPosted: op.is_posted ?? false,
+    counterpartyName: op.counterparty_name ?? '',
+    totalAmount: op.total_amount ?? 0,
   }
 }
 
@@ -58,6 +67,8 @@ export interface CreateOperationPayload {
   operation_date: string
   number: string
   description: string
+  counterparty_id?: number | null
+  is_draft?: boolean
   entries: EntryPayload[]
 }
 
