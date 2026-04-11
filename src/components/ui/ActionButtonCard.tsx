@@ -3,6 +3,7 @@ interface ActionButtonCardProps {
   label: string
   description?: string
   onClick?: () => void
+  disabled?: boolean
 }
 
 export default function ActionButtonCard({
@@ -10,15 +11,19 @@ export default function ActionButtonCard({
   label,
   description,
   onClick,
+  disabled,
 }: ActionButtonCardProps) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       className="
         flex items-center gap-3 w-full px-4 py-3
         border border-gray-200 rounded-lg bg-white
         hover:bg-gray-50 hover:border-gray-300
         transition-colors text-left
+        disabled:opacity-40 disabled:cursor-not-allowed
+        disabled:hover:bg-white disabled:hover:border-gray-200
       "
     >
       <span className="text-blue-600 shrink-0">{icon}</span>

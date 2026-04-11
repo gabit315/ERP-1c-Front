@@ -124,6 +124,7 @@ export default function CreateDocumentPage() {
   const [submitting, setSubmitting]     = useState(false)
   const [submitError, setSubmitError]   = useState<string | null>(null)
   const [submitSuccess, setSubmitSuccess] = useState(false)
+  const [submitStatus, setSubmitStatus] = useState<'posted' | 'draft' | null>(null)
 
   // AI analyze
   const [aiLoading, setAiLoading] = useState(false)
@@ -270,7 +271,7 @@ export default function CreateDocumentPage() {
 
   // ─── submit ───────────────────────────────────────────────────────────────
 
-  const handleSubmit = () => {
+  const handleSubmit = (status: 'posted' | 'draft') => {
     const errs = validate()
     if (Object.keys(errs).length > 0) {
       setErrors(errs)
@@ -278,25 +279,21 @@ export default function CreateDocumentPage() {
     }
     setErrors({})
     setSubmitting(true)
+    setSubmitStatus(status)
     setSubmitError(null)
     setSubmitSuccess(false)
 
+    const base = {
+      document_date: date,
+      amount: Number(amount),
+      purpose: purpose.trim() || undefined,
+      status,
+    }
+
     const payload =
       docType === 'expense'
-        ? {
-            document_type: 'expense' as const,
-            document_date: date,
-            amount: Number(amount),
-            item_id: Number(itemId),
-            purpose: purpose.trim() || undefined,
-          }
-        : {
-            document_type: docType,
-            document_date: date,
-            amount: Number(amount),
-            counterparty_id: Number(counterpartyId),
-            purpose: purpose.trim(),
-          }
+        ? { ...base, document_type: 'expense' as const, item_id: Number(itemId) }
+        : { ...base, document_type: docType, counterparty_id: Number(counterpartyId) }
 
     createDocument(payload)
       .then(() => {
@@ -306,7 +303,7 @@ export default function CreateDocumentPage() {
       .catch((e: unknown) => {
         setSubmitError(e instanceof Error ? e.message : 'Ошибка создания документа')
       })
-      .finally(() => setSubmitting(false))
+      .finally(() => { setSubmitting(false); setSubmitStatus(null) })
   }
 
   // ─── derived flags & lists ───────────────────────────────────────────────
@@ -589,10 +586,18 @@ export default function CreateDocumentPage() {
             <button
               type="button"
               disabled={submitting || selectLoading}
-              onClick={handleSubmit}
+              onClick={() => handleSubmit('draft')}
+              className="text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 rounded-lg transition-colors"
+            >
+              {submitting && submitStatus === 'draft' ? 'Сохранение...' : 'Сохранить черновик'}
+            </button>
+            <button
+              type="button"
+              disabled={submitting || selectLoading}
+              onClick={() => handleSubmit('posted')}
               className="text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 rounded-lg transition-colors"
             >
-              {submitting ? 'Создание...' : 'Создать документ'}
+              {submitting && submitStatus === 'posted' ? 'Создание...' : 'Провести документ'}
             </button>
           </div>
 

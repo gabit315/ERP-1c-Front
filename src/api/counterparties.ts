@@ -11,6 +11,7 @@ interface ApiCounterparty {
   bin_iin: string | null
   counterparty_type: 'supplier' | 'buyer'
   contact: string | null
+  notes: string | null
   deleted_at: string | null
 }
 
@@ -22,6 +23,7 @@ export interface Counterparty {
   binIin: string | null
   type: 'supplier' | 'buyer'
   contact: string | null
+  notes: string | null
 }
 
 // ─── payloads ────────────────────────────────────────────────────────────────
@@ -31,6 +33,7 @@ export interface CounterpartyPayload {
   bin_iin: string | null
   counterparty_type: 'supplier' | 'buyer'
   contact: string | null
+  notes: string | null
 }
 
 // ─── mapper ───────────────────────────────────────────────────────────────────
@@ -42,6 +45,7 @@ function mapCounterparty(c: ApiCounterparty): Counterparty {
     binIin: c.bin_iin,
     type: c.counterparty_type,
     contact: c.contact,
+    notes: c.notes,
   }
 }
 
@@ -85,3 +89,4 @@ export async function updateCounterparty(id: number, payload: CounterpartyPayloa
 export async function deleteCounterparty(id: number): Promise<void> {
   await mutate(`/api/counterparties/${id}`, 'DELETE')
 }
+

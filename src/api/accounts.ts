@@ -45,7 +45,8 @@ interface ApiAnalysis {
 export interface Account {
   code: string
   name: string
-  accountType: 'active' | 'passive'
+  accountType: 'active' | 'passive' | 'active-passive'
+  isActive: boolean
   balanceAmount: number | null
   balanceSide: 'debit' | 'credit' | null
 }
@@ -92,6 +93,7 @@ function mapAccount(a: ApiAccount): Account {
     code: a.code,
     name: a.name,
     accountType: a.account_type,
+    isActive: a.is_active,
     balanceAmount: a.balance_amount,
     balanceSide: a.balance_side,
   }

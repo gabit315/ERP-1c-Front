@@ -6,6 +6,7 @@ interface KPIStatCardProps {
   title: string
   value: string
   subtitle?: string
+  subtitleClass?: string
   icon: React.ReactNode
   iconBg?: string
   trend?: Trend
@@ -22,6 +23,7 @@ export default function KPIStatCard({
   title,
   value,
   subtitle,
+  subtitleClass = 'text-gray-400',
   icon,
   iconBg = 'bg-blue-50',
   trend,
@@ -41,7 +43,7 @@ export default function KPIStatCard({
       <div>
         <p className="text-xl font-semibold text-gray-800 leading-none">{value}</p>
         {subtitle && (
-          <p className="text-xs text-gray-400 mt-1">{subtitle}</p>
+          <p className={`text-xs mt-1 ${subtitleClass}`}>{subtitle}</p>
         )}
       </div>
 

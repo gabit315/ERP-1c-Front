@@ -7,9 +7,6 @@ import {
   FilePlus,
   CreditCard,
   FileBarChart,
-  BookPlus,
-  ReceiptText,
-  ArrowDownToLine,
   RefreshCw,
   ServerCrash,
   Inbox,
@@ -18,7 +15,6 @@ import KPIStatCard from '../components/ui/KPIStatCard'
 import SectionCard from '../components/ui/SectionCard'
 import ActionButtonCard from '../components/ui/ActionButtonCard'
 import RecentOperationList, { type Operation } from '../components/ui/RecentOperationList'
-import CounterpartyModal from '../components/ui/CounterpartyModal'
 import { checkHealth, getDashboard } from '../api/dashboard'
 import type { DashboardData } from '../types/dashboard'
 import type { PageId } from '../components/layout/Sidebar'
@@ -64,43 +60,32 @@ function plural(n: number): string {
 
 // ─── quick actions ────────────────────────────────────────────────────────────
 
-function buildQuickActions(
-  onNavigate: (page: PageId) => void,
-  onNewCounterparty: () => void,
-) {
+function buildQuickActions(onNavigate: (page: PageId) => void) {
   return [
     {
-      icon: <FilePlus size={18} />,
-      label: 'Создать накладную',
-      description: 'Приходная или расходная',
-      onClick: () => onNavigate('create-document'),
-    },
-    {
       icon: <CreditCard size={18} />,
-      label: 'Добавить платёж',
-      description: 'Платёжное поручение',
+      label: 'Новая операция',
+      description: 'Перейти в раздел операций',
       onClick: () => onNavigate('operations'),
     },
     {
+      icon: <FilePlus size={18} />,
+      label: 'Создать документ',
+      description: 'Раздел в разработке',
+      // disabled: маршрут ещё не реализован, чтобы не давать ложного перехода
+      disabled: true,
+    },
+    {
       icon: <FileBarChart size={18} />,
-      label: 'Сформировать отчёт',
-      description: 'Финансовая отчётность',
+      label: 'ОСВ',
+      description: 'Оборотно-сальдовая ведомость',
+      onClick: () => onNavigate('osv'),
     },
     {
-      icon: <BookPlus size={18} />,
-      label: 'Новый контрагент',
-      description: 'Добавить в справочник',
-      onClick: onNewCounterparty,
-    },
-    {
-      icon: <ReceiptText size={18} />,
-      label: 'Создать акт',
-      description: 'Акт выполненных работ',
-    },
-    {
-      icon: <ArrowDownToLine size={18} />,
-      label: 'Импорт данных',
-      description: 'Загрузить из файла',
+      icon: <TrendingUp size={18} />,
+      label: 'Аналитика',
+      description: 'Финансовая аналитика',
+      onClick: () => onNavigate('analytics'),
     },
   ]
 }
@@ -166,8 +151,6 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
   const [status, setStatus] = useState<LoadStatus>('loading')
   const [data, setData] = useState<DashboardData | null>(null)
   const [errorMessage, setErrorMessage] = useState('')
-  const [counterpartyModalOpen, setCounterpartyModalOpen] = useState(false)
-
   const load = useCallback(async () => {
     setStatus('loading')
     try {
@@ -199,14 +182,18 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
           <div className="col-span-2">
             <SectionCard title="Быстрые действия" className="h-full">
               <div className="flex flex-col gap-2">
-                {buildQuickActions(onNavigate, () => setCounterpartyModalOpen(true)).map((action) => (
+                {buildQuickActions(onNavigate).map((action) => (
                   <ActionButtonCard key={action.label} {...action} />
                 ))}
               </div>
             </SectionCard>
           </div>
           <div className="col-span-3">
-            <SectionCard title="Последние операции" className="h-full">
+            <SectionCard title="Последние операции" className="h-full" action={
+              <button onClick={() => onNavigate('operations')} className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+                Смотреть все
+              </button>
+            }>
               <div className="flex flex-col divide-y divide-gray-100">
                 {Array.from({ length: 5 }).map((_, i) => (
                   <OperationRowSkeleton key={i} />
@@ -313,7 +300,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
         <div className="col-span-2">
           <SectionCard title="Быстрые действия" className="h-full">
             <div className="flex flex-col gap-2">
-              {buildQuickActions(onNavigate, () => setCounterpartyModalOpen(true)).map((action) => (
+              {buildQuickActions(onNavigate).map((action) => (
                 <ActionButtonCard key={action.label} {...action} />
               ))}
             </div>
@@ -322,7 +309,11 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
 
         {/* Recent operations — 3/5 */}
         <div className="col-span-3">
-          <SectionCard title="Последние операции" className="h-full">
+          <SectionCard title="Последние операции" className="h-full" action={
+            <button onClick={() => onNavigate('operations')} className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+              Смотреть все
+            </button>
+          }>
             {operations.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
                 <Inbox size={28} className="text-gray-300" />
@@ -335,13 +326,6 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
         </div>
       </div>
 
-      {counterpartyModalOpen && (
-        <CounterpartyModal
-          initial={null}
-          onClose={() => setCounterpartyModalOpen(false)}
-          onSaved={() => setCounterpartyModalOpen(false)}
-        />
-      )}
     </PageShell>
   )
 }

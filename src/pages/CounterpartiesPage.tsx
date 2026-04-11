@@ -1,111 +1,160 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
-import { Plus, ServerCrash, RefreshCw, Users } from 'lucide-react'
+import {
+  Plus,
+  ServerCrash,
+  RefreshCw,
+  Users,
+  ChevronRight,
+  Pencil,
+  Trash2,
+  Phone,
+} from 'lucide-react'
 import PageHeaderWithAction from '../components/ui/PageHeaderWithAction'
 import SearchCard from '../components/ui/SearchCard'
 import StatusBadge from '../components/ui/StatusBadge'
-import RowActions from '../components/ui/RowActions'
 import CounterpartyModal from '../components/ui/CounterpartyModal'
+import CounterpartyDetailModal from '../components/ui/CounterpartyDetailModal'
 import {
   getCounterparties,
   deleteCounterparty,
 } from '../api/counterparties'
 import type { Counterparty } from '../api/counterparties'
 
-// ─── table skeleton ───────────────────────────────────────────────────────────
+// ─── type label helper ────────────────────────────────────────────────────────
 
-function TableSkeleton() {
+function typeBadge(type: Counterparty['type']) {
+  if (type === 'supplier') return { label: 'Поставщик', variant: 'supplier' } as const
+  return                          { label: 'Покупатель', variant: 'buyer'    } as const
+}
+
+// ─── card skeleton ────────────────────────────────────────────────────────────
+
+function CardsSkeleton() {
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden animate-pulse">
-      <table className="w-full text-sm border-collapse">
-        <thead>
-          <tr className="border-b border-gray-200 bg-gray-50">
-            {[null, 'w-44', 'w-36', 'w-48', 'w-28'].map((w, i) => (
-              <th key={i} className={`px-5 py-3 ${w ?? ''}`}>
-                <div className="h-3 bg-gray-200 rounded w-16" />
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {Array.from({ length: 6 }).map((_, i) => (
-            <tr key={i} className="border-b border-gray-100 last:border-0">
-              <td className="px-5 py-3.5"><div className="h-3.5 bg-gray-200 rounded w-48" /></td>
-              <td className="px-4 py-3.5"><div className="h-3.5 bg-gray-200 rounded w-28" /></td>
-              <td className="px-4 py-3.5"><div className="h-5 bg-gray-100 rounded-full w-22" /></td>
-              <td className="px-4 py-3.5"><div className="h-3.5 bg-gray-100 rounded w-32" /></td>
-              <td className="px-5 py-3.5"><div className="h-6 bg-gray-100 rounded w-14" /></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div
+          key={i}
+          className="bg-white border border-gray-200 rounded-lg p-5 flex flex-col gap-3 animate-pulse"
+        >
+          <div className="flex items-start justify-between">
+            <div className="h-5 bg-gray-100 rounded-full w-24" />
+            <div className="flex gap-1.5">
+              <div className="w-6 h-6 bg-gray-100 rounded" />
+              <div className="w-6 h-6 bg-gray-100 rounded" />
+            </div>
+          </div>
+          <div>
+            <div className="h-4 bg-gray-200 rounded w-48 mb-1.5" />
+            <div className="h-3 bg-gray-100 rounded w-32" />
+          </div>
+          <div className="h-3 bg-gray-100 rounded w-40" />
+          <div className="pt-1 border-t border-gray-100">
+            <div className="h-3.5 bg-gray-100 rounded w-20" />
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
 
-// ─── table ────────────────────────────────────────────────────────────────────
+// ─── counterparty card ────────────────────────────────────────────────────────
 
-function CounterpartiesTable({
+function CounterpartyCard({
+  counterparty,
+  onDetails,
+  onEdit,
+  onDelete,
+}: {
+  counterparty: Counterparty
+  onDetails: (c: Counterparty) => void
+  onEdit: (c: Counterparty) => void
+  onDelete: (c: Counterparty) => void
+}) {
+  const badge = typeBadge(counterparty.type)
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg p-5 flex flex-col gap-3 hover:border-gray-300 transition-colors">
+
+      {/* type badge + edit/delete actions */}
+      <div className="flex items-start justify-between gap-2">
+        <StatusBadge label={badge.label} variant={badge.variant} />
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={() => onEdit(counterparty)}
+            title="Редактировать"
+            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+          >
+            <Pencil size={14} />
+          </button>
+          <button
+            onClick={() => onDelete(counterparty)}
+            title="Удалить"
+            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      </div>
+
+      {/* name + BIN/IIN */}
+      <div>
+        <p className="text-sm font-semibold text-gray-800 leading-snug">{counterparty.name}</p>
+        {counterparty.binIin ? (
+          <p className="text-xs text-gray-400 font-mono mt-0.5">БИН/ИИН: {counterparty.binIin}</p>
+        ) : (
+          <p className="text-xs text-gray-300 mt-0.5">БИН/ИИН не указан</p>
+        )}
+      </div>
+
+      {/* contact (phone / email — единое поле из API) */}
+      <div className="flex items-center gap-1.5 min-w-0">
+        <Phone size={13} className="text-gray-300 shrink-0" />
+        {counterparty.contact ? (
+          <span className="text-xs text-gray-500 truncate">{counterparty.contact}</span>
+        ) : (
+          <span className="text-xs text-gray-300">Контакт не указан</span>
+        )}
+      </div>
+
+      {/* footer: Подробнее — opens detail modal with tabs */}
+      <div className="mt-auto pt-2 border-t border-gray-100">
+        <button
+          onClick={() => onDetails(counterparty)}
+          className="flex items-center gap-0.5 text-blue-600 hover:text-blue-700 text-sm transition-colors"
+        >
+          Подробнее
+          <ChevronRight size={14} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── cards grid ───────────────────────────────────────────────────────────────
+
+function CounterpartiesGrid({
   rows,
+  onDetails,
   onEdit,
   onDelete,
 }: {
   rows: Counterparty[]
+  onDetails: (c: Counterparty) => void
   onEdit: (c: Counterparty) => void
   onDelete: (c: Counterparty) => void
 }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-      <table className="w-full text-sm border-collapse">
-        <thead>
-          <tr className="border-b border-gray-200 bg-gray-50">
-            <th className="text-left text-xs font-semibold text-gray-400 tracking-wider uppercase px-5 py-3">
-              Название
-            </th>
-            <th className="text-left text-xs font-semibold text-gray-400 tracking-wider uppercase px-4 py-3 w-44">
-              БИН/ИИН
-            </th>
-            <th className="text-left text-xs font-semibold text-gray-400 tracking-wider uppercase px-4 py-3 w-36">
-              Тип
-            </th>
-            <th className="text-left text-xs font-semibold text-gray-400 tracking-wider uppercase px-4 py-3 w-48">
-              Контакт
-            </th>
-            <th className="text-left text-xs font-semibold text-gray-400 tracking-wider uppercase px-5 py-3 w-28">
-              Действия
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr
-              key={row.id}
-              className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors"
-            >
-              <td className="px-5 py-3.5 text-gray-800 font-medium">
-                {row.name}
-              </td>
-              <td className="px-4 py-3.5 font-mono text-gray-600 text-sm">
-                {row.binIin ?? <span className="text-gray-400">—</span>}
-              </td>
-              <td className="px-4 py-3.5">
-                <StatusBadge
-                  label={row.type === 'supplier' ? 'Поставщик' : 'Покупатель'}
-                  variant={row.type}
-                />
-              </td>
-              <td className="px-4 py-3.5 text-gray-600">
-                {row.contact ?? <span className="text-gray-400">—</span>}
-              </td>
-              <td className="px-5 py-3.5">
-                <RowActions
-                  onEdit={() => onEdit(row)}
-                  onDelete={() => onDelete(row)}
-                />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      {rows.map((c) => (
+        <CounterpartyCard
+          key={c.id}
+          counterparty={c}
+          onDetails={onDetails}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      ))}
     </div>
   )
 }
@@ -183,7 +232,7 @@ export default function CounterpartiesPage() {
   const [errorMessage, setErrorMessage] = useState('')
   const [query, setQuery] = useState('')
 
-  // modal state
+  const [detailTarget, setDetailTarget] = useState<Counterparty | null>(null)
   const [editTarget, setEditTarget] = useState<Counterparty | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Counterparty | null>(null)
@@ -202,6 +251,7 @@ export default function CounterpartiesPage() {
 
   useEffect(() => { void load() }, [load])
 
+  // search: name, BIN/IIN, contact (contains phone / email)
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return counterparties
@@ -209,16 +259,23 @@ export default function CounterpartiesPage() {
       (c) =>
         c.name.toLowerCase().includes(q) ||
         (c.binIin ?? '').includes(q) ||
-        (c.contact ?? '').toLowerCase().includes(q)
+        (c.contact ?? '').toLowerCase().includes(q),
     )
   }, [query, counterparties])
 
+  function openDetail(c: Counterparty) {
+    setDetailTarget(c)
+  }
+
   function openCreate() {
+    setDetailTarget(null)
     setEditTarget(null)
     setModalOpen(true)
   }
 
   function openEdit(c: Counterparty) {
+    // called from detail modal — close detail first, then open edit
+    setDetailTarget(null)
     setEditTarget(c)
     setModalOpen(true)
   }
@@ -233,18 +290,24 @@ export default function CounterpartiesPage() {
     void load()
   }
 
+  function openDeleteFromDetail(c: Counterparty) {
+    // called from detail modal — close detail first, then open delete confirm
+    setDetailTarget(null)
+    setDeleteTarget(c)
+  }
+
   function handleDeleted() {
     setDeleteTarget(null)
     void load()
   }
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="p-6 max-w-screen-xl mx-auto flex flex-col gap-6">
+    <div className="flex-1 overflow-y-auto bg-gray-50">
+      <div className="p-6 max-w-screen-xl mx-auto flex flex-col gap-5">
 
         <PageHeaderWithAction
           title="Контрагенты"
-          subtitle="Управление поставщиками и покупателями"
+          subtitle="Управление контрагентами, договорами и банковскими счетами"
           action={
             <button
               onClick={openCreate}
@@ -259,11 +322,11 @@ export default function CounterpartiesPage() {
         <SearchCard
           value={query}
           onChange={setQuery}
-          placeholder="Поиск контрагентов..."
+          placeholder="Поиск по названию, БИН или email..."
         />
 
         {/* loading */}
-        {status === 'loading' && <TableSkeleton />}
+        {status === 'loading' && <CardsSkeleton />}
 
         {/* error */}
         {status === 'error' && (
@@ -288,37 +351,30 @@ export default function CounterpartiesPage() {
         {/* success */}
         {status === 'success' && (
           counterparties.length === 0 ? (
-            /* empty — no data at all */
             <div className="flex flex-col items-center justify-center gap-3 py-16 text-center bg-white border border-gray-200 rounded-lg">
               <Users size={32} className="text-gray-300" />
               <p className="text-gray-500 font-medium">Контрагентов пока нет</p>
               <p className="text-sm text-gray-400">Добавьте первого поставщика или покупателя</p>
+              <button
+                onClick={openCreate}
+                className="flex items-center gap-1.5 mt-1 bg-blue-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Plus size={15} />
+                Добавить контрагента
+              </button>
             </div>
           ) : filtered.length === 0 ? (
-            /* empty — search no results */
-            <div className="bg-white border border-gray-200 rounded-lg">
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50">
-                    <th className="text-left text-xs font-semibold text-gray-400 tracking-wider uppercase px-5 py-3">Название</th>
-                    <th className="text-left text-xs font-semibold text-gray-400 tracking-wider uppercase px-4 py-3 w-44">БИН/ИИН</th>
-                    <th className="text-left text-xs font-semibold text-gray-400 tracking-wider uppercase px-4 py-3 w-36">Тип</th>
-                    <th className="text-left text-xs font-semibold text-gray-400 tracking-wider uppercase px-4 py-3 w-48">Контакт</th>
-                    <th className="text-left text-xs font-semibold text-gray-400 tracking-wider uppercase px-5 py-3 w-28">Действия</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td colSpan={5} className="text-center text-sm text-gray-400 py-12">
-                      Ничего не найдено по запросу «{query}»
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+            <div className="flex flex-col items-center justify-center gap-2 py-16 text-center bg-white border border-gray-200 rounded-lg">
+              <Users size={28} className="text-gray-300" />
+              <p className="text-sm text-gray-500">
+                Ничего не найдено по запросу{' '}
+                <span className="font-medium text-gray-700">«{query}»</span>
+              </p>
             </div>
           ) : (
-            <CounterpartiesTable
+            <CounterpartiesGrid
               rows={filtered}
+              onDetails={openDetail}
               onEdit={openEdit}
               onDelete={setDeleteTarget}
             />
@@ -328,6 +384,15 @@ export default function CounterpartiesPage() {
       </div>
 
       {/* modals */}
+      {detailTarget && (
+        <CounterpartyDetailModal
+          counterparty={detailTarget}
+          onClose={() => setDetailTarget(null)}
+          onEdit={openEdit}
+          onDelete={openDeleteFromDetail}
+        />
+      )}
+
       {modalOpen && (
         <CounterpartyModal
           initial={editTarget}
