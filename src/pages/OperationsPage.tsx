@@ -1,47 +1,46 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Search, ChevronRight, Plus, CheckCircle2, SlidersHorizontal } from 'lucide-react'
-import { getOperations, type OperationItem } from '../api/operations'
+import { Search, ChevronDown, Plus, CheckCircle2, SlidersHorizontal } from 'lucide-react'
+import { getOperations, getOperationsSummary, type OperationItem, type OperationsSummary } from '../api/operations'
 import { getAccounts, type Account } from '../api/accounts'
 import CreateOperationPage from './CreateOperationPage'
 
 // ─── mock fallback (shown when API returns no data) ───────────────────────────
-// Removed when backend reliably returns is_posted + total_amount + counterparty_name
 
 const MOCK_OPS: OperationItem[] = [
   {
     id: 124, date: '17.03.2026', dateRaw: '2026-03-17',
     number: 'ОП-00124', description: 'Оплата коммунальных услуг за март',
-    entriesCount: 1, isPosted: true,
+    entriesCount: 1, status: 'posted', isPosted: true,
     counterpartyName: 'ТОО "Энергосбыт"', totalAmount: 125_000,
   },
   {
     id: 123, date: '17.03.2026', dateRaw: '2026-03-17',
     number: 'ОП-00123', description: 'Поступление оплаты за обучение от родителей',
-    entriesCount: 1, isPosted: true,
+    entriesCount: 1, status: 'posted', isPosted: true,
     counterpartyName: 'Родители учеников', totalAmount: 850_000,
   },
   {
     id: 122, date: '16.03.2026', dateRaw: '2026-03-16',
     number: 'ОП-00122', description: 'Выплата заработной платы преподавателям',
-    entriesCount: 1, isPosted: true,
+    entriesCount: 1, status: 'posted', isPosted: true,
     counterpartyName: 'Сотрудники', totalAmount: 1_200_000,
   },
   {
     id: 121, date: '15.03.2026', dateRaw: '2026-03-15',
     number: 'ОП-00121', description: 'Покупка канцелярских товаров и учебных материалов',
-    entriesCount: 2, isPosted: true,
+    entriesCount: 2, status: 'posted', isPosted: true,
     counterpartyName: 'ТОО "Канцтовары"', totalAmount: 77_000,
   },
   {
     id: 120, date: '14.03.2026', dateRaw: '2026-03-14',
     number: 'ОП-00120', description: 'Аренда помещения за март',
-    entriesCount: 1, isPosted: false,
+    entriesCount: 1, status: 'draft', isPosted: false,
     counterpartyName: 'ИП Иванов И.И.', totalAmount: 450_000,
   },
   {
     id: 119, date: '14.03.2026', dateRaw: '2026-03-14',
     number: 'ОП-00119', description: 'Закупка учебных пособий',
-    entriesCount: 1, isPosted: false,
+    entriesCount: 1, status: 'draft', isPosted: false,
     counterpartyName: 'ТОО "Книжный мир"', totalAmount: 85_000,
   },
 ]
@@ -58,37 +57,103 @@ function formatMoney(n: number): string {
   return n.toLocaleString('ru-RU') + ' ₸'
 }
 
+function formatRecalcAt(iso: string): string {
+  try {
+    const d = new Date(iso)
+    const date = d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+    return `${date} в ${time}`
+  } catch {
+    return iso
+  }
+}
+
 // ─── OperationListItem ────────────────────────────────────────────────────────
 
 function OperationListItem({ item }: { item: OperationItem }) {
+  const [expanded, setExpanded] = useState(false)
+
   return (
-    <div className="bg-white border border-gray-200 rounded-lg px-5 py-4 flex items-center gap-4 hover:bg-gray-50 transition-colors cursor-default">
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
 
-      {/* date + number */}
-      <div className="w-32 shrink-0">
-        <div className="text-xs text-gray-400 tabular-nums">{item.date}</div>
-        <div className="text-sm font-medium text-blue-600 mt-0.5">{item.number}</div>
-      </div>
+      {/* ── clickable header row ── */}
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full px-5 py-4 flex items-center gap-4 hover:bg-gray-50 transition-colors text-left"
+      >
+        {/* date + number */}
+        <div className="w-32 shrink-0">
+          <div className="text-xs text-gray-400 tabular-nums">{item.date}</div>
+          <div className="text-sm font-medium text-blue-600 mt-0.5">{item.number}</div>
+        </div>
 
-      {/* description + counterparty */}
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-gray-800 truncate">{item.description}</div>
-        {item.counterpartyName && (
-          <div className="text-xs text-gray-400 truncate mt-0.5">{item.counterpartyName}</div>
-        )}
-      </div>
+        {/* description + counterparty */}
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-gray-800 truncate">{item.description}</div>
+          {item.counterpartyName && (
+            <div className="text-xs text-gray-400 truncate mt-0.5">{item.counterpartyName}</div>
+          )}
+        </div>
 
-      {/* amount + entry count */}
-      <div className="shrink-0 text-right">
-        {item.totalAmount > 0 && (
-          <div className="text-sm font-semibold text-gray-900 tabular-nums">
-            {formatMoney(item.totalAmount)}
+        {/* amount + entry count */}
+        <div className="shrink-0 text-right">
+          {item.totalAmount > 0 && (
+            <div className="text-sm font-semibold text-gray-900 tabular-nums">
+              {formatMoney(item.totalAmount)}
+            </div>
+          )}
+          <div className="text-xs text-gray-400 mt-0.5">{entriesLabel(item.entriesCount)}</div>
+        </div>
+
+        <ChevronDown
+          size={15}
+          className={`text-gray-400 shrink-0 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {/* ── expanded detail panel ── */}
+      {expanded && (
+        <div className="border-t border-gray-100 px-5 py-4 bg-gray-50 flex flex-col gap-3">
+
+          {/* status + meta */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+              item.isPosted
+                ? 'bg-green-100 text-green-700'
+                : 'bg-amber-100 text-amber-700'
+            }`}>
+              {item.isPosted ? 'Проведено' : 'Черновик'}
+            </span>
+            {item.counterpartyName && (
+              <span className="text-xs text-gray-500">
+                Контрагент: <span className="text-gray-700 font-medium">{item.counterpartyName}</span>
+              </span>
+            )}
+            <span className="text-xs text-gray-500">
+              Проводок: <span className="text-gray-700 font-medium">{item.entriesCount}</span>
+            </span>
+            {item.totalAmount > 0 && (
+              <span className="text-xs text-gray-500">
+                Сумма: <span className="text-gray-700 font-medium tabular-nums">{formatMoney(item.totalAmount)}</span>
+              </span>
+            )}
           </div>
-        )}
-        <div className="text-xs text-gray-400 mt-0.5">{entriesLabel(item.entriesCount)}</div>
-      </div>
 
-      <ChevronRight size={15} className="text-gray-300 shrink-0" />
+          {/* description */}
+          <p className="text-sm text-gray-700">{item.description}</p>
+
+          {/* actions */}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
+            >
+              Подробнее →
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -98,13 +163,15 @@ function OperationListItem({ item }: { item: OperationItem }) {
 function OperationsListView({ onCreateClick }: { onCreateClick: () => void }) {
 
   // ── data ──────────────────────────────────────────────────────────────────
-  const [apiOps, setApiOps]       = useState<OperationItem[]>([])
-  const [loading, setLoading]     = useState(true)
-  const [error, setError]         = useState<string | null>(null)
-  const [accounts, setAccounts]   = useState<Account[]>([])
+  const [apiOps, setApiOps]           = useState<OperationItem[]>([])
+  const [loading, setLoading]         = useState(true)
+  const [error, setError]             = useState<string | null>(null)
+  const [accounts, setAccounts]       = useState<Account[]>([])
+  const [summary, setSummary]         = useState<OperationsSummary | null>(null)
 
   // ── filters ───────────────────────────────────────────────────────────────
-  const [tab, setTab]                     = useState<'posted' | 'drafts'>('posted')
+  // Tab keys match the contract: 'posted' | 'draft'
+  const [tab, setTab]                     = useState<'posted' | 'draft'>('posted')
   const [search, setSearch]               = useState('')
   const [accountFilter, setAccountFilter] = useState('')
   const [cpFilter, setCpFilter]           = useState('')
@@ -120,6 +187,10 @@ function OperationsListView({ onCreateClick }: { onCreateClick: () => void }) {
       .then(setApiOps)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Ошибка загрузки'))
       .finally(() => setLoading(false))
+    // Summary is independent — failures are silent
+    getOperationsSummary()
+      .then(setSummary)
+      .catch(() => {})
   }
 
   useEffect(() => {
@@ -130,11 +201,15 @@ function OperationsListView({ onCreateClick }: { onCreateClick: () => void }) {
   // Use API data if available, otherwise fall back to mock data
   const allOps = apiOps.length > 0 ? apiOps : (!loading && !error ? MOCK_OPS : apiOps)
 
-  // ── derived stats ─────────────────────────────────────────────────────────
+  // ── derived stats — use status field per contract ─────────────────────────
 
-  const posted = useMemo(() => allOps.filter((o) => o.isPosted),  [allOps])
-  const drafts  = useMemo(() => allOps.filter((o) => !o.isPosted), [allOps])
+  const posted    = useMemo(() => allOps.filter((o) => o.status === 'posted'), [allOps])
+  const drafts    = useMemo(() => allOps.filter((o) => o.status === 'draft'),  [allOps])
   const postedSum = useMemo(() => posted.reduce((s, o) => s + o.totalAmount, 0), [posted])
+
+  // Tab counts: prefer summary from API, fall back to client-side counts
+  const postedCount = summary?.posted_count ?? posted.length
+  const draftCount  = summary?.draft_count  ?? drafts.length
 
   // ── filtered list ─────────────────────────────────────────────────────────
 
@@ -194,16 +269,18 @@ function OperationsListView({ onCreateClick }: { onCreateClick: () => void }) {
         {!loading && !error && (
           <div className="flex items-center gap-2 text-sm flex-wrap">
             <span className="text-gray-500">Всего:</span>
-            <span className="font-semibold text-gray-800">{allOps.length}</span>
+            <span className="font-semibold text-gray-800">{summary?.total_count ?? allOps.length}</span>
             <span className="text-gray-300 mx-1">·</span>
             <span className="text-gray-500">Проведено:</span>
-            <span className="font-semibold text-gray-800">{posted.length}</span>
+            <span className="font-semibold text-gray-800">{postedCount}</span>
             <span className="text-gray-300 mx-1">·</span>
             <span className="text-gray-500">Черновиков:</span>
-            <span className="font-semibold text-gray-800">{drafts.length}</span>
+            <span className="font-semibold text-gray-800">{draftCount}</span>
             <span className="text-gray-300 mx-1">·</span>
             <span className="text-gray-500">Сумма проведенных:</span>
-            <span className="font-semibold text-gray-800">{formatMoney(postedSum)}</span>
+            <span className="font-semibold text-gray-800">
+              {formatMoney(summary?.posted_total_amount ?? postedSum)}
+            </span>
           </div>
         )}
 
@@ -211,16 +288,18 @@ function OperationsListView({ onCreateClick }: { onCreateClick: () => void }) {
         <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-2.5 flex items-center gap-2.5">
           <CheckCircle2 size={15} className="text-green-600 shrink-0" />
           <span className="text-sm font-medium text-green-800">Данные актуальны</span>
-          <span className="text-sm text-green-600">
-            · Последний пересчет: 17.03.2026 в 14:23
-          </span>
+          {summary?.last_recalculated_at && (
+            <span className="text-sm text-green-600">
+              · Последний пересчет: {formatRecalcAt(summary.last_recalculated_at)}
+            </span>
+          )}
         </div>
 
         {/* ── underline tabs ────────────────────────────────────────────── */}
         <div className="flex border-b border-gray-200">
           {[
-            { id: 'posted' as const, label: 'Проведенные', count: posted.length },
-            { id: 'drafts' as const, label: 'Черновики',   count: drafts.length },
+            { id: 'posted' as const, label: 'Проведенные', count: postedCount },
+            { id: 'draft'  as const, label: 'Черновики',   count: draftCount  },
           ].map((t) => (
             <button
               key={t.id}

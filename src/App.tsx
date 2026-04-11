@@ -15,6 +15,7 @@ import AccountAnalysisPage from './pages/AccountAnalysisPage'
 import GeneralSummaryPage from './pages/GeneralSummaryPage'
 import AnalyticsPage from './pages/AnalyticsPage'
 import OperationTemplatesPage from './pages/OperationTemplatesPage'
+import AIAnalyticsPage from './pages/AIAnalyticsPage'
 
 function renderPage(page: PageId, onNavigate: (p: PageId) => void) {
   switch (page) {
@@ -30,6 +31,7 @@ function renderPage(page: PageId, onNavigate: (p: PageId) => void) {
     case 'account-analysis':     return <AccountAnalysisPage />
     case 'general-summary':      return <GeneralSummaryPage />
     case 'analytics':            return <AnalyticsPage />
+    case 'ai-analytics':         return <AIAnalyticsPage />
     default:                     return <DashboardPage onNavigate={onNavigate} />
   }
 }

@@ -189,7 +189,11 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
             </SectionCard>
           </div>
           <div className="col-span-3">
-            <SectionCard title="Последние операции" className="h-full">
+            <SectionCard title="Последние операции" className="h-full" action={
+              <button onClick={() => onNavigate('operations')} className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+                Смотреть все
+              </button>
+            }>
               <div className="flex flex-col divide-y divide-gray-100">
                 {Array.from({ length: 5 }).map((_, i) => (
                   <OperationRowSkeleton key={i} />
@@ -305,7 +309,11 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
 
         {/* Recent operations — 3/5 */}
         <div className="col-span-3">
-          <SectionCard title="Последние операции" className="h-full">
+          <SectionCard title="Последние операции" className="h-full" action={
+            <button onClick={() => onNavigate('operations')} className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+              Смотреть все
+            </button>
+          }>
             {operations.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
                 <Inbox size={28} className="text-gray-300" />

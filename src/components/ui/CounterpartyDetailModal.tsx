@@ -173,15 +173,15 @@ export default function CounterpartyDetailModal({
         </div>
 
         {/* tab bar */}
-        <div className="flex gap-1 px-6 border-b border-gray-200">
+        <div className="flex px-6 border-b border-gray-200">
           {TABS.map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`px-3 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
                 tab === t.id
                   ? 'text-blue-600 border-blue-600'
-                  : 'text-gray-500 border-transparent hover:text-gray-700'
+                  : 'text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300'
               }`}
             >
               {t.label}

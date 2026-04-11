@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Sidebar, { type PageId } from './Sidebar'
+import AIAssistantWidget from '../ai/AIAssistantWidget'
 
 interface AppShellProps {
   activePage: PageId
@@ -21,6 +22,9 @@ export default function AppShell({ activePage, onNavigate, children }: AppShellP
       <div className="flex-1 flex flex-col overflow-hidden">
         {children}
       </div>
+
+      {/* глобальный AI-ассистент — доступен на всех страницах */}
+      <AIAssistantWidget />
     </div>
   )
 }

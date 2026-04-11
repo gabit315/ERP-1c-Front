@@ -4,34 +4,7 @@ import PageHeader from '../components/ui/PageHeader'
 import { getAccounts, type Account } from '../api/accounts'
 import { getCounterparties, type Counterparty } from '../api/counterparties'
 import { createOperation, suggestEntries } from '../api/operations'
-
-// ─── templates ────────────────────────────────────────────────────────────────
-
-const TEMPLATES = [
-  {
-    id: 'income'  as const,
-    label: 'Поступление',
-    description: 'Поступление оплаты от контрагента',
-    debit: '1030',
-    credit: '3510',
-  },
-  {
-    id: 'payment' as const,
-    label: 'Оплата',
-    description: 'Оплата поставщику',
-    debit: '2410',
-    credit: '1030',
-  },
-  {
-    id: 'salary'  as const,
-    label: 'Зарплата',
-    description: 'Выплата заработной платы',
-    debit: '3350',
-    credit: '1030',
-  },
-] as const
-
-type TemplateId = (typeof TEMPLATES)[number]['id']
+import { getOperationsSystemTemplates, type OperationSystemTemplate } from '../api/operations'
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -106,7 +79,9 @@ export default function CreateOperationPage({ onBack }: { onBack?: () => void } 
   ])
 
   // ── template state ────────────────────────────────────────────────────────
-  const [activeTemplate, setActiveTemplate] = useState<TemplateId | null>(null)
+  const [activeTemplate, setActiveTemplate] = useState<string | null>(null)
+  const [templates, setTemplates]           = useState<OperationSystemTemplate[]>([])
+  const [templatesLoading, setTplLoading]   = useState(true)
 
   // ── resources ────────────────────────────────────────────────────────────
   const [accounts, setAccounts]           = useState<Account[]>([])
@@ -136,19 +111,28 @@ export default function CreateOperationPage({ onBack }: { onBack?: () => void } 
   useEffect(() => {
     loadAccounts()
     getCounterparties().then(setCPs).catch(() => {})
+    getOperationsSystemTemplates()
+      .then(setTemplates)
+      .catch(() => {})
+      .finally(() => setTplLoading(false))
   }, [])
 
   // ── template helpers ──────────────────────────────────────────────────────
 
-  const applyTemplate = (id: TemplateId) => {
-    const tpl = TEMPLATES.find((t) => t.id === id)!
-    setActiveTemplate(id)
+  const applyTemplate = (tpl: OperationSystemTemplate) => {
+    setActiveTemplate(tpl.id)
     setDescription(tpl.description)
-    // Replace first entry with template accounts, preserve amount
+    // Fill first entry from template's first entry; preserve amount
+    const firstEntry = tpl.entries[0]
     setEntries((prev) => {
       const first = prev[0]
       return [
-        { id: first?.id ?? nextId.current++, debit: tpl.debit, credit: tpl.credit, amount: first?.amount ?? '' },
+        {
+          id: first?.id ?? nextId.current++,
+          debit:  firstEntry?.debit_account_code  ?? '',
+          credit: firstEntry?.credit_account_code ?? '',
+          amount: first?.amount ?? '',
+        },
         ...prev.slice(1),
       ]
     })
@@ -256,7 +240,7 @@ export default function CreateOperationPage({ onBack }: { onBack?: () => void } 
       number: opNumber,
       description,
       counterparty_id: counterpartyId ? Number(counterpartyId) : null,
-      is_draft: isDraft,
+      status: isDraft ? 'draft' : 'posted',
       entries: entries
         .filter((e) => e.debit && e.credit && Number(e.amount) > 0)
         .map((e) => ({
@@ -346,25 +330,31 @@ export default function CreateOperationPage({ onBack }: { onBack?: () => void } 
               Очистить шаблон
             </button>
           </div>
-          <div className="flex gap-2">
-            {TEMPLATES.map((tpl) => {
-              const isActive = activeTemplate === tpl.id
-              return (
-                <button
-                  key={tpl.id}
-                  type="button"
-                  onClick={() => applyTemplate(tpl.id)}
-                  className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
-                    isActive
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 bg-white text-gray-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700'
-                  }`}
-                >
-                  {tpl.label}
-                </button>
-              )
-            })}
-          </div>
+          {templatesLoading ? (
+            <p className="text-sm text-gray-400">Загрузка шаблонов...</p>
+          ) : templates.length === 0 ? (
+            <p className="text-sm text-gray-400">Нет шаблонов. Создайте их в разделе «Шаблоны операций».</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {templates.map((tpl) => {
+                const isActive = activeTemplate === tpl.id
+                return (
+                  <button
+                    key={tpl.id}
+                    type="button"
+                    onClick={() => applyTemplate(tpl)}
+                    className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
+                      isActive
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700'
+                    }`}
+                  >
+                    {tpl.title}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         {/* ── system rule ─────────────────────────────────────────────────── */}

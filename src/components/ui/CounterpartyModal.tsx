@@ -94,7 +94,7 @@ export default function CounterpartyModal({ initial, onClose, onSaved }: Counter
               onChange={(e) => set('name', e.target.value)}
               disabled={submitting}
               placeholder="ТОО «Название компании»"
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-400"
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-300 focus:border-blue-300 transition-colors disabled:bg-gray-50 disabled:text-gray-400"
             />
           </div>
 
@@ -106,7 +106,7 @@ export default function CounterpartyModal({ initial, onClose, onSaved }: Counter
               onChange={(e) => set('binIin', e.target.value)}
               disabled={submitting}
               placeholder="123456789012"
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-400"
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-300 focus:border-blue-300 transition-colors disabled:bg-gray-50 disabled:text-gray-400"
             />
           </div>
 
@@ -118,7 +118,7 @@ export default function CounterpartyModal({ initial, onClose, onSaved }: Counter
               value={form.type}
               onChange={(e) => set('type', e.target.value as 'supplier' | 'buyer')}
               disabled={submitting}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-400"
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-300 focus:border-blue-300 transition-colors disabled:bg-gray-50 disabled:text-gray-400"
             >
               <option value="supplier">Поставщик</option>
               <option value="buyer">Покупатель</option>
@@ -133,7 +133,7 @@ export default function CounterpartyModal({ initial, onClose, onSaved }: Counter
               onChange={(e) => set('contact', e.target.value)}
               disabled={submitting}
               placeholder="+7 700 000 0000"
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-400"
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-300 focus:border-blue-300 transition-colors disabled:bg-gray-50 disabled:text-gray-400"
             />
           </div>
 
@@ -145,7 +145,7 @@ export default function CounterpartyModal({ initial, onClose, onSaved }: Counter
               disabled={submitting}
               placeholder="Дополнительная информация..."
               rows={3}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-400 resize-none"
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-300 focus:border-blue-300 transition-colors disabled:bg-gray-50 disabled:text-gray-400 resize-none"
             />
           </div>
 
