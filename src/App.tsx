@@ -16,6 +16,7 @@ import GeneralSummaryPage from './pages/GeneralSummaryPage'
 import AnalyticsPage from './pages/AnalyticsPage'
 import OperationTemplatesPage from './pages/OperationTemplatesPage'
 import AIAnalyticsPage from './pages/AIAnalyticsPage'
+import SalaryPage from './pages/SalaryPage'
 
 function renderPage(page: PageId, onNavigate: (p: PageId) => void) {
   switch (page) {
@@ -32,6 +33,7 @@ function renderPage(page: PageId, onNavigate: (p: PageId) => void) {
     case 'general-summary':      return <GeneralSummaryPage />
     case 'analytics':            return <AnalyticsPage />
     case 'ai-analytics':         return <AIAnalyticsPage />
+    case 'salary':               return <SalaryPage />
     default:                     return <DashboardPage onNavigate={onNavigate} />
   }
 }
