@@ -12,6 +12,7 @@ import {
   Settings,
   PanelLeftClose,
   PanelLeftOpen,
+  Wallet,
 } from 'lucide-react'
 import SidebarItem from './SidebarItem'
 
@@ -37,6 +38,7 @@ export type PageId =
   | 'analytics'
   | 'ai-analytics'
   | 'settings'
+  | 'salary'
 
 interface NavChild {
   label: string
@@ -80,6 +82,12 @@ const navGroups: NavGroup[] = [
     icon: <ClipboardList size={17} />,
     label: 'Операции',
     pageId: 'operations',
+  },
+  {
+    id: 'salary',
+    icon: <Wallet size={17} />,
+    label: 'Зарплата',
+    pageId: 'salary',
   },
   // {
   //   id: 'docs',
