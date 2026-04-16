@@ -1,6 +1,13 @@
 // ─── payroll domain types ──────────────────────────────────────────────────
 
-export type PayrollStatus = 'draft' | 'calculated' | 'posted'
+/**
+ * Статусы из backend (GET /api/payroll):
+ *   calculated     → рассчитано, ещё не проведено
+ *   processing     → проведено (бухгалтерские проводки созданы)
+ *   paid           → выплачено
+ *   not_calculated → frontend-only: сотрудник есть, но payroll за этот месяц не создан
+ */
+export type PayrollStatus = 'calculated' | 'processing' | 'paid' | 'not_calculated'
 
 // Config for a single allowance (percent or fixed amount)
 export interface AllowanceConfig {
@@ -11,19 +18,20 @@ export interface AllowanceConfig {
   enabled: boolean
 }
 
-// Row in the payroll list table
+// Row in the payroll list table — merged from employees + payroll API
 export interface PayrollListItem {
-  employeeId: number
-  fullName: string
-  position: string
-  department: string
-  iin: string
-  baseSalary: number
+  payrollId?:     string  // id из payroll_calculations; отсутствует если нет записи
+  employeeId:     number
+  fullName:       string
+  position:       string
+  department:     string
+  iin:            string
+  baseSalary:     number
   allowancesTotal: number
-  gross: number
-  deductions: number
-  netSalary: number
-  status: PayrollStatus
+  gross:          number  // totalAccrued из API; 0 если нет записи
+  deductions:     number  // totalDeductions из API; 0 если нет записи
+  netSalary:      number  // netPay из API; 0 если нет записи
+  status:         PayrollStatus
 }
 
 // Per-allowance breakdown for the detail page

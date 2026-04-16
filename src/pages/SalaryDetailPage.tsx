@@ -1,14 +1,23 @@
 import { useState, useEffect, useMemo } from 'react'
-import { ArrowLeft, User } from 'lucide-react'
-import { getEmployeeForPayroll, getBaseSalary } from '../services/payrollService'
+import { ArrowLeft, User, CheckCircle, TrendingDown, Wallet } from 'lucide-react'
+import { getEmployee } from '../api/employees'
+import { getEmployeePayrollForPeriod } from '../api/payroll'
 import type { Employee } from '../api/employees'
-import type { AllowanceConfig } from '../types/salary'
+import type { AllowanceConfig, PayrollStatus } from '../types/salary'
 import {
   DEFAULT_ALLOWANCES,
   calculatePayroll,
   formatCurrency,
   TAX_RATES,
 } from '../utils/salaryCalculations'
+
+// ─── status badge ─────────────────────────────────────────────────────────────
+
+const STATUS_CONFIG: Record<PayrollStatus, { label: string; cls: string }> = {
+  calculated: { label: 'Рассчитано', cls: 'bg-blue-50 text-blue-600 border border-blue-200' },
+  processing: { label: 'Проведено',  cls: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
+  paid:       { label: 'Выплачено',  cls: 'bg-purple-50 text-purple-700 border border-purple-200' },
+}
 
 // ─── allowance toggle row ─────────────────────────────────────────────────────
 
@@ -51,7 +60,9 @@ function AllowanceRow({
         </button>
 
         <div>
-          <p className="text-sm font-medium text-gray-800">{config.label}</p>
+          <p className={`text-sm font-medium ${config.enabled ? 'text-gray-800' : 'text-gray-400'}`}>
+            {config.label}
+          </p>
           <p className="text-xs text-gray-400">
             {config.type === 'percent'
               ? `${config.value}% от оклада`
@@ -74,7 +85,7 @@ function AllowanceRow({
   )
 }
 
-// ─── calculation row ──────────────────────────────────────────────────────────
+// ─── calc row ─────────────────────────────────────────────────────────────────
 
 function CalcRow({
   label,
@@ -89,20 +100,55 @@ function CalcRow({
 }) {
   const valueClass = {
     default: 'text-gray-700',
-    positive: 'text-green-600',
+    positive: 'text-emerald-600',
     negative: 'text-red-500',
     total: 'text-gray-900 font-bold text-base',
   }[variant]
 
+  const isTotal = variant === 'total'
+
   return (
-    <div className="flex items-start justify-between py-2 border-b border-gray-100 last:border-0">
+    <div
+      className={`flex items-start justify-between py-2.5 border-b border-gray-100 last:border-0 ${
+        isTotal ? 'bg-gray-50 -mx-5 px-5 rounded-b-xl' : ''
+      }`}
+    >
       <div>
-        <p className={`text-sm ${variant === 'total' ? 'font-semibold text-gray-800' : 'text-gray-600'}`}>
+        <p className={`text-sm ${isTotal ? 'font-semibold text-gray-800' : 'text-gray-600'}`}>
           {label}
         </p>
-        {sub && <p className="text-xs text-gray-400">{sub}</p>}
+        {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
       </div>
       <p className={`text-sm font-mono shrink-0 ml-4 ${valueClass}`}>{value}</p>
+    </div>
+  )
+}
+
+// ─── section card ─────────────────────────────────────────────────────────────
+
+function SectionCard({
+  title,
+  icon,
+  children,
+  footer,
+}: {
+  title: string
+  icon?: React.ReactNode
+  children: React.ReactNode
+  footer?: React.ReactNode
+}) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div className="flex items-center gap-2.5 px-5 py-4 border-b border-gray-100">
+        {icon && (
+          <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+            {icon}
+          </div>
+        )}
+        <h2 className="text-sm font-semibold text-gray-800">{title}</h2>
+      </div>
+      <div className="p-5">{children}</div>
+      {footer && <div className="px-5 pb-5">{footer}</div>}
     </div>
   )
 }
@@ -118,8 +164,8 @@ function AvatarInitials({ name }: { name: string }) {
     .toUpperCase()
 
   return (
-    <div className="w-16 h-16 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xl font-bold shrink-0">
-      {initials || <User size={24} />}
+    <div className="w-14 h-14 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center text-lg font-bold shrink-0">
+      {initials || <User size={22} />}
     </div>
   )
 }
@@ -128,34 +174,37 @@ function AvatarInitials({ name }: { name: string }) {
 
 interface SalaryDetailPageProps {
   employeeId: number
+  period: string
   onBack: () => void
 }
 
-export default function SalaryDetailPage({ employeeId, onBack }: SalaryDetailPageProps) {
+export default function SalaryDetailPage({ employeeId, period, onBack }: SalaryDetailPageProps) {
   const [employee, setEmployee] = useState<Employee | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [allowances, setAllowances] = useState<AllowanceConfig[]>(DEFAULT_ALLOWANCES)
-  const [status, setStatus] = useState<'draft' | 'calculated' | 'posted'>('draft')
+  const [status, setStatus] = useState<PayrollStatus>('calculated')
 
   useEffect(() => {
     setLoading(true)
     setError(null)
-    getEmployeeForPayroll(employeeId)
-      .then((emp) => {
+    Promise.all([
+      getEmployee(employeeId),
+      getEmployeePayrollForPeriod(employeeId, period),
+    ])
+      .then(([emp, payroll]) => {
         setEmployee(emp)
-        // reset allowances when switching employees
         setAllowances(DEFAULT_ALLOWANCES.map((a) => ({ ...a, enabled: false })))
-        setStatus('draft')
+        setStatus(payroll?.status ?? 'calculated')
       })
       .catch((e: unknown) => {
         setError(e instanceof Error ? e.message : 'Ошибка загрузки')
       })
       .finally(() => setLoading(false))
-  }, [employeeId])
+  }, [employeeId, period])
 
   const baseSalary = useMemo(
-    () => (employee ? getBaseSalary(employee.id) : 0),
+    () => (employee ? (employee.baseSalary ?? 0) : 0),
     [employee],
   )
 
@@ -168,15 +217,7 @@ export default function SalaryDetailPage({ employeeId, onBack }: SalaryDetailPag
     setAllowances((prev) =>
       prev.map((a) => (a.id === id ? { ...a, enabled: !a.enabled } : a)),
     )
-    if (status === 'posted') setStatus('draft')
-  }
-
-  function handlePost() {
-    setStatus('posted')
-  }
-
-  function handleSaveDraft() {
-    setStatus('calculated')
+    if (status === 'processing' || status === 'paid') setStatus('calculated')
   }
 
   // ── loading / error states ────────────────────────────────────────────────
@@ -184,7 +225,10 @@ export default function SalaryDetailPage({ employeeId, onBack }: SalaryDetailPag
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <span className="text-sm text-gray-400">Загрузка...</span>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm text-gray-400">Загрузка...</span>
+        </div>
       </div>
     )
   }
@@ -194,7 +238,7 @@ export default function SalaryDetailPage({ employeeId, onBack }: SalaryDetailPag
       <div className="flex-1 flex flex-col items-center justify-center gap-3">
         <span className="text-sm text-red-500">{error ?? 'Сотрудник не найден'}</span>
         <button onClick={onBack} className="text-sm text-blue-600 hover:text-blue-700 font-medium">
-          Назад
+          Назад к списку
         </button>
       </div>
     )
@@ -203,98 +247,98 @@ export default function SalaryDetailPage({ employeeId, onBack }: SalaryDetailPag
   const enabledAllowanceCount = allowances.filter((a) => a.enabled).length
   const totalPercentIncrease =
     baseSalary > 0 ? Math.round((calc.allowancesTotal / baseSalary) * 100) : 0
+  const statusCfg = STATUS_CONFIG[status]
 
   // ── render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="p-6 max-w-screen-xl mx-auto flex flex-col gap-6">
+      <div className="p-6 lg:p-8 max-w-screen-xl mx-auto flex flex-col gap-6">
 
-        {/* page header */}
+        {/* ── page header ─────────────────────────────────────── */}
         <div className="flex items-center gap-4">
           <button
             onClick={onBack}
-            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-300 rounded-lg px-3 py-2 transition-colors"
           >
-            <ArrowLeft size={16} />
-            Назад
+            <ArrowLeft size={14} />
+            К списку
           </button>
-          <div className="h-4 w-px bg-gray-300" />
-          <div>
-            <h1 className="text-xl font-semibold text-gray-800">{employee.fullName}</h1>
-            <p className="text-sm text-gray-500">{employee.position}</p>
+
+          <div className="h-5 w-px bg-gray-200" />
+
+          <div className="flex items-start gap-3">
+            <div className="w-1 h-9 bg-blue-600 rounded-full shrink-0" />
+            <div>
+              <h1 className="text-xl font-bold text-gray-900 leading-tight">{employee.fullName}</h1>
+              <p className="text-sm text-gray-500">{employee.position}</p>
+            </div>
           </div>
-          <div className="ml-auto flex items-center gap-2">
+
+          <div className="ml-auto flex items-center gap-2.5">
             <span
-              className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
-                status === 'posted'
-                  ? 'bg-green-50 text-green-700'
-                  : status === 'calculated'
-                    ? 'bg-blue-50 text-blue-600'
-                    : 'bg-gray-100 text-gray-600'
-              }`}
+              className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold ${statusCfg.cls}`}
             >
-              {status === 'posted' ? 'Проведено' : status === 'calculated' ? 'Рассчитано' : 'Черновик'}
+              {statusCfg.label}
             </span>
             <button
-              onClick={handleSaveDraft}
-              disabled={status === 'posted'}
-              className="border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              onClick={() => setStatus('processing')}
+              disabled={status === 'processing' || status === 'paid'}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              Сохранить черновик
-            </button>
-            <button
-              onClick={handlePost}
-              disabled={status === 'posted'}
-              className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
+              <CheckCircle size={14} />
               Провести начисление
             </button>
           </div>
         </div>
 
-        {/* main content: two columns */}
+        {/* ── main grid ───────────────────────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-          {/* left column: employee card + allowances */}
+          {/* left column */}
           <div className="flex flex-col gap-5">
 
             {/* employee card */}
-            <div className="bg-white border border-gray-200 rounded-lg p-5 flex flex-col gap-4">
-              <div className="flex items-center gap-4">
+            <div className="bg-white border border-gray-200 rounded-xl p-5 flex flex-col gap-4">
+              <div className="flex items-center gap-3.5">
                 <AvatarInitials name={employee.fullName} />
                 <div>
-                  <p className="font-semibold text-gray-800">{employee.fullName}</p>
-                  <p className="text-sm text-gray-500">{employee.position}</p>
+                  <p className="font-semibold text-gray-900 leading-snug">{employee.fullName}</p>
+                  <p className="text-sm text-gray-500 mt-0.5">{employee.position}</p>
                 </div>
               </div>
-              <div className="flex flex-col gap-2 pt-1 border-t border-gray-100 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">ИИН</span>
-                  <span className="font-mono text-gray-700">{employee.iin}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Подразделение</span>
-                  <span className="text-gray-700 text-right max-w-[150px]">{employee.department}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Базовый оклад</span>
-                  <span className="font-mono font-semibold text-gray-800">{formatCurrency(baseSalary)}</span>
+
+              <div className="border-t border-gray-100 pt-3 flex flex-col gap-2.5">
+                {[
+                  { label: 'ИИН', value: employee.iin, mono: true },
+                  { label: 'Подразделение', value: employee.department, mono: false },
+                ].map(({ label, value, mono }) => (
+                  <div key={label} className="flex justify-between items-start gap-3 text-sm">
+                    <span className="text-gray-400 shrink-0">{label}</span>
+                    <span className={`text-right text-gray-700 ${mono ? 'font-mono' : ''} max-w-[170px]`}>
+                      {value}
+                    </span>
+                  </div>
+                ))}
+                <div className="flex justify-between items-center text-sm pt-1 border-t border-gray-100">
+                  <span className="text-gray-400">Базовый оклад</span>
+                  <span className="font-mono font-bold text-gray-900">{formatCurrency(baseSalary)}</span>
                 </div>
               </div>
             </div>
 
-            {/* allowances block */}
-            <div className="bg-white border border-gray-200 rounded-lg p-5">
-              <div className="flex items-center justify-between mb-4">
+            {/* allowances */}
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
                 <h2 className="text-sm font-semibold text-gray-800">Настройки надбавок</h2>
                 {enabledAllowanceCount > 0 && (
-                  <span className="text-xs text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-full">
+                  <span className="text-xs text-blue-600 font-semibold bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
                     {enabledAllowanceCount} активно
                   </span>
                 )}
               </div>
-              <div>
+
+              <div className="px-5">
                 {allowances.map((a) => (
                   <AllowanceRow
                     key={a.id}
@@ -304,11 +348,12 @@ export default function SalaryDetailPage({ employeeId, onBack }: SalaryDetailPag
                   />
                 ))}
               </div>
+
               {calc.allowancesTotal > 0 && (
-                <div className="mt-3 pt-3 border-t border-gray-100 flex justify-between text-sm">
-                  <span className="text-gray-600">Итого надбавок</span>
-                  <span className="font-semibold text-blue-600">
-                    + {formatCurrency(calc.allowancesTotal)}
+                <div className="mx-5 mb-5 mt-1 bg-blue-50 rounded-lg px-4 py-2.5 flex justify-between text-sm">
+                  <span className="text-blue-600 font-medium">Итого надбавок</span>
+                  <span className="font-semibold text-blue-700">
+                    +{formatCurrency(calc.allowancesTotal)}
                     <span className="text-xs text-blue-400 ml-1">({totalPercentIncrease}%)</span>
                   </span>
                 </div>
@@ -316,12 +361,11 @@ export default function SalaryDetailPage({ employeeId, onBack }: SalaryDetailPag
             </div>
           </div>
 
-          {/* right column: calculation breakdown */}
+          {/* right column */}
           <div className="lg:col-span-2 flex flex-col gap-5">
 
-            {/* gross calculation */}
-            <div className="bg-white border border-gray-200 rounded-lg p-5">
-              <h2 className="text-sm font-semibold text-gray-800 mb-4">Начисление</h2>
+            {/* gross */}
+            <SectionCard title="Начисление" icon={<Wallet size={14} />}>
               <CalcRow label="Базовый оклад" value={formatCurrency(calc.baseSalary)} />
               {calc.allowanceBreakdown
                 .filter((a) => a.enabled)
@@ -339,20 +383,19 @@ export default function SalaryDetailPage({ employeeId, onBack }: SalaryDetailPag
                 value={formatCurrency(calc.gross)}
                 variant="total"
               />
-            </div>
+            </SectionCard>
 
             {/* deductions */}
-            <div className="bg-white border border-gray-200 rounded-lg p-5">
-              <h2 className="text-sm font-semibold text-gray-800 mb-4">Удержания</h2>
+            <SectionCard title="Удержания" icon={<TrendingDown size={14} />}>
               <CalcRow
                 label="ОПВ"
-                value={`- ${formatCurrency(calc.opv)}`}
+                value={`− ${formatCurrency(calc.opv)}`}
                 sub={`${TAX_RATES.OPV * 100}% от gross`}
                 variant="negative"
               />
               <CalcRow
                 label="ОСМС"
-                value={`- ${formatCurrency(calc.osms)}`}
+                value={`− ${formatCurrency(calc.osms)}`}
                 sub={`${TAX_RATES.OSMS_EMPLOYEE * 100}% от gross`}
                 variant="negative"
               />
@@ -363,27 +406,36 @@ export default function SalaryDetailPage({ employeeId, onBack }: SalaryDetailPag
               />
               <CalcRow
                 label="ИПН"
-                value={`- ${formatCurrency(calc.iit)}`}
+                value={`− ${formatCurrency(calc.iit)}`}
                 sub={`${TAX_RATES.IIT * 100}% от облагаемого дохода`}
                 variant="negative"
               />
               <CalcRow
                 label="Итого удержаний"
-                value={`- ${formatCurrency(calc.deductions)}`}
+                value={`− ${formatCurrency(calc.deductions)}`}
                 variant="total"
               />
-            </div>
+            </SectionCard>
 
-            {/* net + employer costs */}
-            <div className="bg-white border border-gray-200 rounded-lg p-5">
-              <h2 className="text-sm font-semibold text-gray-800 mb-4">Итоговый расчёт</h2>
-              <CalcRow
-                label="К выдаче (Net)"
-                value={formatCurrency(calc.netSalary)}
-                variant="total"
-              />
-              <div className="mt-4 pt-4 border-t border-gray-100">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+            {/* net + employer */}
+            <SectionCard title="Итоговый расчёт" icon={<CheckCircle size={14} />}>
+
+              {/* net salary highlight */}
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-5 py-4 flex items-center justify-between mb-5">
+                <div>
+                  <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-1">К выдаче (Net)</p>
+                  <p className="text-2xl font-bold text-emerald-700 font-mono">
+                    {formatCurrency(calc.netSalary)}
+                  </p>
+                </div>
+                <div className="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                  <Wallet size={22} />
+                </div>
+              </div>
+
+              {/* employer costs */}
+              <div>
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-3">
                   Нагрузка на работодателя
                 </p>
                 <CalcRow
@@ -402,7 +454,7 @@ export default function SalaryDetailPage({ employeeId, onBack }: SalaryDetailPag
                   variant="total"
                 />
               </div>
-            </div>
+            </SectionCard>
 
           </div>
         </div>

@@ -7,6 +7,6 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
-    allowedHosts: ['erp.gabit.gabittest.work'],
+    allowedHosts: ['erp.gabit.gabittest.work', 'custard-quirk-angling.ngrok-free.dev'],
   },
 })
