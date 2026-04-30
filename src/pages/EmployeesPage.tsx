@@ -10,6 +10,7 @@ import {
   deleteEmployee,
 } from '../api/employees'
 import type { Employee, EmployeePayload } from '../api/employees'
+import EmployeeEditPage from './EmployeeEditPage'
 
 // ─── table ────────────────────────────────────────────────────────────────────
 
@@ -345,6 +346,7 @@ export default function EmployeesPage() {
   const [editTarget, setEditTarget] = useState<Employee | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null)
+  const [editPageTarget, setEditPageTarget] = useState<Employee | null>(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -377,8 +379,7 @@ export default function EmployeesPage() {
   }
 
   function openEdit(e: Employee) {
-    setEditTarget(e)
-    setModalOpen(true)
+    setEditPageTarget(e)
   }
 
   function closeModal() {
@@ -394,6 +395,15 @@ export default function EmployeesPage() {
   function handleDeleted() {
     setDeleteTarget(null)
     load()
+  }
+
+  if (editPageTarget) {
+    return (
+      <EmployeeEditPage
+        employee={editPageTarget}
+        onBack={() => setEditPageTarget(null)}
+      />
+    )
   }
 
   return (

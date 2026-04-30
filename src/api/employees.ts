@@ -11,6 +11,7 @@ interface ApiEmployee {
   position: string
   department: string
   iin: string
+  base_salary: number | null
   deleted_at: string | null
 }
 
@@ -22,6 +23,7 @@ export interface Employee {
   position: string
   department: string
   iin: string
+  baseSalary: number | null
 }
 
 // ─── payload ─────────────────────────────────────────────────────────────────
@@ -31,6 +33,8 @@ export interface EmployeePayload {
   position: string
   department: string
   iin: string
+  /** Если не передавать — backend оставит текущее значение */
+  base_salary?: number | null
 }
 
 // ─── mapper ───────────────────────────────────────────────────────────────────
@@ -42,6 +46,7 @@ function mapEmployee(e: ApiEmployee): Employee {
     position: e.position,
     department: e.department,
     iin: e.iin,
+    baseSalary: e.base_salary,
   }
 }
 
@@ -72,6 +77,11 @@ export async function getEmployees(): Promise<Employee[]> {
   return raw
     .filter((e) => e.deleted_at == null)
     .map(mapEmployee)
+}
+
+export async function getEmployee(id: number): Promise<Employee> {
+  const raw = await apiFetch<ApiEmployee>(`/api/employees/${id}`)
+  return mapEmployee(raw)
 }
 
 export async function createEmployee(payload: EmployeePayload): Promise<void> {

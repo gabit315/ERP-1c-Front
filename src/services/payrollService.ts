@@ -1,72 +1,90 @@
-/**
- * payrollService — abstraction layer over the employees API + mock payroll data.
- *
- * When a real payroll backend is ready:
- *   - replace `getPayrollList()` to call `GET /api/payroll?month=...`
- *   - replace `getEmployeeForPayroll()` to call `GET /api/payroll/{id}`
- *   - remove the mock helpers below
- */
-
-import { getEmployees } from '../api/employees'
+import { apiFetch } from '../api/client'
+import { getEmployees, getEmployee } from '../api/employees'
 import type { Employee } from '../api/employees'
 import type { PayrollListItem, PayrollStatus } from '../types/salary'
-import { calculatePayroll, DEFAULT_ALLOWANCES } from '../utils/salaryCalculations'
 
-// ─── mock payroll data ────────────────────────────────────────────────────────
+// ─── raw API types ─────────────────────────────────────────────────────────────
 
-// Deterministic: same employee always gets the same salary so UI is consistent
-const MOCK_SALARIES = [
-  250_000, 320_000, 410_000, 180_000, 290_000,
-  350_000, 220_000, 475_000, 310_000, 260_000,
-]
-const MOCK_STATUSES: PayrollStatus[] = [
-  'draft', 'calculated', 'posted', 'draft', 'calculated',
-]
-
-function mockBaseSalary(employeeId: number): number {
-  return MOCK_SALARIES[employeeId % MOCK_SALARIES.length]
+interface ApiPayrollListItem {
+  id: string
+  employeeId: string
+  employeeName: string
+  position: string
+  baseSalary: number | null
+  totalAccrued: number | null
+  totalDeductions: number | null
+  netPay: number | null
+  status: string
+  period: string
 }
 
-function mockStatus(employeeId: number): PayrollStatus {
-  return MOCK_STATUSES[employeeId % MOCK_STATUSES.length]
+interface ApiPayrollListResponse {
+  data: ApiPayrollListItem[]
+  period: string
 }
 
-// ─── mapper: Employee → PayrollListItem ───────────────────────────────────────
-
-function toPayrollListItem(employee: Employee): PayrollListItem {
-  const baseSalary = mockBaseSalary(employee.id)
-  const calc = calculatePayroll(baseSalary, DEFAULT_ALLOWANCES)
-
-  return {
-    employeeId: employee.id,
-    fullName: employee.fullName,
-    position: employee.position,
-    department: employee.department,
-    iin: employee.iin,
-    baseSalary,
-    allowancesTotal: calc.allowancesTotal,
-    gross: calc.gross,
-    deductions: calc.deductions,
-    netSalary: calc.netSalary,
-    status: mockStatus(employee.id),
-  }
-}
 
 // ─── public service API ───────────────────────────────────────────────────────
 
-/** Returns payroll list for the given month. Month param is ready for future API use. */
-export async function getPayrollList(_month?: string): Promise<PayrollListItem[]> {
-  const employees = await getEmployees()
-  return employees.map(toPayrollListItem)
+/**
+ * Загружает список сотрудников и payroll за period параллельно,
+ * затем делает merge: каждый активный сотрудник попадает в таблицу,
+ * даже если payroll_calculations за этот месяц ещё нет.
+ */
+export async function getPayrollList(period: string): Promise<PayrollListItem[]> {
+  const [employees, payrollResponse] = await Promise.all([
+    getEmployees(),
+    apiFetch<ApiPayrollListResponse>(`/api/payroll/?period=${period}`).catch(() => ({ data: [], period })),
+  ])
+
+  // Индекс payroll по employeeId для быстрого поиска
+  const payrollByEmployeeId = new Map<number, ApiPayrollListItem>()
+  for (const item of payrollResponse.data) {
+    payrollByEmployeeId.set(parseInt(item.employeeId), item)
+  }
+
+  return employees.map((emp): PayrollListItem => {
+    const payroll = payrollByEmployeeId.get(emp.id)
+
+    if (payroll) {
+      return {
+        payrollId:       payroll.id,
+        employeeId:      emp.id,
+        fullName:        emp.fullName,
+        position:        emp.position,
+        department:      emp.department,
+        iin:             emp.iin,
+        baseSalary:      payroll.baseSalary      ?? emp.baseSalary ?? 0,
+        allowancesTotal: 0,
+        gross:           payroll.totalAccrued    ?? 0,
+        deductions:      payroll.totalDeductions ?? 0,
+        netSalary:       payroll.netPay          ?? 0,
+        status:          payroll.status as PayrollStatus,
+      }
+    }
+
+    // Нет payroll-записи за этот период — показываем сотрудника с нулями
+    return {
+      employeeId:      emp.id,
+      fullName:        emp.fullName,
+      position:        emp.position,
+      department:      emp.department,
+      iin:             emp.iin,
+      baseSalary:      emp.baseSalary ?? 0,
+      allowancesTotal: 0,
+      gross:           0,
+      deductions:      0,
+      netSalary:       0,
+      status:          'not_calculated' as PayrollStatus,
+    }
+  })
 }
 
 /** Returns a single employee record for the detail/calculation page. */
 export async function getEmployeeForPayroll(employeeId: number): Promise<Employee | null> {
-  const employees = await getEmployees()
-  return employees.find((e) => e.id === employeeId) ?? null
-}
-
-/** Returns the mock base salary for an employee (frontend-only, replace with API later). */
-export function getBaseSalary(employeeId: number): number {
-  return mockBaseSalary(employeeId)
+  try {
+    return await getEmployee(employeeId)
+  } catch {
+    return null
+  }
 }

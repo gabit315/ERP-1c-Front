@@ -7,16 +7,21 @@ import SalaryDetailPage from './SalaryDetailPage'
  * Manages internal navigation between list and employee detail views.
  */
 export default function SalaryPage() {
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null)
+  const [selected, setSelected] = useState<{ employeeId: number; period: string } | null>(null)
 
-  if (selectedEmployeeId !== null) {
+  if (selected !== null) {
     return (
       <SalaryDetailPage
-        employeeId={selectedEmployeeId}
-        onBack={() => setSelectedEmployeeId(null)}
+        employeeId={selected.employeeId}
+        period={selected.period}
+        onBack={() => setSelected(null)}
       />
     )
   }
 
-  return <SalaryListPage onSelectEmployee={setSelectedEmployeeId} />
+  return (
+    <SalaryListPage
+      onSelectEmployee={(id, period) => setSelected({ employeeId: id, period })}
+    />
+  )
 }
